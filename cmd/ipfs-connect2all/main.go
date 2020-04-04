@@ -16,19 +16,59 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
+// data for evaluation / plotting
+var dataFilesMutex = &sync.Mutex{}
+var dataFiles = make(map[string]*[][]int)
+
+// get pointer for adding data elements, not synced yet
+func getFileData(filename string) *[][]int {
+	dataFilesMutex.Lock()
+	defer dataFilesMutex.Unlock()
+	dataFiles[filename] = &[][]int{}
+	return dataFiles[filename]
+}
+
+// write collected data to files
+func writeData() {
+	dataFilesMutex.Lock()
+	for dataFile, dataValues := range dataFiles {
+		f, err := os.OpenFile(dataFile, os.O_CREATE|os.O_WRONLY, 0644)
+		if err == nil {
+			var fileContent strings.Builder
+			for i, dataRow := range *dataValues {
+				if i > 0 {
+					fileContent.WriteByte('\n')
+				}
+				for j, dataVal := range dataRow {
+					if j > 0 {
+						fileContent.WriteByte('\t')
+					}
+					fileContent.WriteString(strconv.Itoa(dataVal))
+				}
+ 			}
+			_, _ = f.WriteString(fileContent.String())
+			_ = f.Close()
+		}
+	}
+	dataFilesMutex.Unlock()
+}
+
 func main() {
 
-	// most of the following steps are currently largely copied (and adapted) from the example (go-ipfs-as-a-library)
-	// create node
+	// some of the initialization steps are taken from the example go-ipfs-as-a-library in the go-ipfs project
+
 	fmt.Println("(1) Setting up IPFS node")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	fmt.Println("(1.1) Spawning node on a temporary repo")
-	fmt.Println("(1.1.1) Set up plugins")
+	fmt.Println("(1.1.1) Setting up plugins")
 	plugins, err := loader.NewPluginLoader(filepath.Join("", "plugins"))
 	if err != nil {
 		panic(fmt.Errorf("error loading plugins: %s", err))
@@ -39,7 +79,8 @@ func main() {
 	if err := plugins.Inject(); err != nil {
 		panic(fmt.Errorf("error initializing plugins: %s", err))
 	}
-	fmt.Println("(1.1.2) Create temporary repo")
+
+	fmt.Println("(1.1.2) Creating temporary repo")
 	repoPath, err := ioutil.TempDir("", "ipfs-shell")
 	if err != nil {
 		panic(fmt.Errorf("failed to get temp dir: %s", err))
@@ -54,7 +95,8 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("failed to init ephemeral node: %s", err))
 	}
-	fmt.Println("(1.2) Create the node")
+
+	fmt.Println("(1.2) Creating the node")
 	// Open the repo
 	repo, err := fsrepo.Open(repoPath)
 	if err != nil {
@@ -99,6 +141,7 @@ func main() {
 	connectionsInitiated := make(map[peer.ID]bool)
 	connectionsFailed := make(map[peer.ID]bool)
 	connectionsEstablished := make(map[peer.ID]bool)
+
 	checkConnectionAndSetInitiated := func(peerID peer.ID) bool {
 		connectionsMutex.Lock()
 		defer connectionsMutex.Unlock()
@@ -108,11 +151,13 @@ func main() {
 		connectionsInitiated[peerID] = true
 		return true
 	}
+
 	setConnectionInitiated := func(peerID peer.ID) {
 		connectionsMutex.Lock()
 		connectionsInitiated[peerID] = true
 		connectionsMutex.Unlock()
 	}
+
 	setConnectionFailed := func(peerID peer.ID) {
 		connectionsMutex.Lock()
 		delete(connectionsInitiated, peerID)
@@ -120,6 +165,7 @@ func main() {
 		connectionsFailed[peerID] = true
 		connectionsMutex.Unlock()
 	}
+
 	setConnectionEstablished := func(peerID peer.ID) {
 		connectionsMutex.Lock()
 		delete(connectionsInitiated, peerID)
@@ -127,13 +173,14 @@ func main() {
 		connectionsEstablished[peerID] = true
 		connectionsMutex.Unlock()
 	}
+
 	countConnections := func() (int, int, int) {
 		connectionsMutex.Lock()
 		defer connectionsMutex.Unlock()
 		return len(connectionsEstablished), len(connectionsFailed), len(connectionsInitiated)
 	}
 
-	// connect to peers like it's done in the example
+	// connect to bootstrap peers
 	fmt.Println("(2) Connecting to bootstrap peers")
 	go func() {
 		var wg sync.WaitGroup
@@ -170,7 +217,7 @@ func main() {
 		wg.Wait()
 	}()
 
-	// print number of connected and known peers every 5s
+	// function to attempt to connect to a node and track progress
 	tryToConnect := func(peerInfo peer.AddrInfo) {
 		if !checkConnectionAndSetInitiated(peerInfo.ID) {
 			return
@@ -185,7 +232,10 @@ func main() {
 		}
 	}
 
+	// collect number of connected and known peers every 5s, try to connect to known peers
+	// write stats to log file peersStat.dat
 	go func() {
+		currentStat := getFileData("peersStat.dat")
 		for {
 			time.Sleep(time.Second*5)
 			knownPeers, err := ipfs.Swarm().KnownAddrs(ctx)
@@ -197,8 +247,9 @@ func main() {
 				log.Printf("failed to get list of connected peers: %s", err)
 			}
 			manEstablished, manFailed, manInitiated := countConnections()
-			log.Printf("\n\nCurrently known peers: %d; connected: %d; manually established: %d, man failed: %d, man initiated: %d",
-				len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
+			//log.Printf("\n\nCurrently known peers: %d; connected: %d; manually established: %d, man failed: %d, man initiated: %d",
+			//	len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
+			*currentStat = append(*currentStat, []int{len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated})
 
 			for peerID, peerAddr := range knownPeers {
 				// check if already connected
@@ -216,19 +267,16 @@ func main() {
 					}
 				}
 
-				// connect if not yet connected
 				if !alreadyConnected {
 					go tryToConnect(peer.AddrInfo{peerID, peerAddr})
 				}
 			}
 		}
 	}()
+	defer writeData()
 
 	log.Print("Press enter to stop...\n\n")
 	reader := bufio.NewReader(os.Stdin)
 	_, _, _ = reader.ReadLine()
-
-	// have a look at IPFS code to see what needs to be changed
-	// probably it is the daemon (main.go/root.go? in case of doubt, start daemon and debug mainRet())
 
 }

@@ -13,51 +13,50 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"io/ioutil"
+	"ipfs-connect2all/stats"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
-// data for evaluation / plotting
-var dataFilesMutex = &sync.Mutex{}
-var dataFiles = make(map[string]*[][]int)
-
-// get pointer for adding data elements, not synced yet
-func getFileData(filename string) *[][]int {
-	dataFilesMutex.Lock()
-	defer dataFilesMutex.Unlock()
-	dataFiles[filename] = &[][]int{}
-	return dataFiles[filename]
-}
-
-// write collected data to files
-func writeData() {
-	dataFilesMutex.Lock()
-	for dataFile, dataValues := range dataFiles {
-		f, err := os.OpenFile(dataFile, os.O_CREATE|os.O_WRONLY, 0644)
-		if err == nil {
-			var fileContent strings.Builder
-			for i, dataRow := range *dataValues {
-				if i > 0 {
-					fileContent.WriteByte('\n')
-				}
-				for j, dataVal := range dataRow {
-					if j > 0 {
-						fileContent.WriteByte('\t')
-					}
-					fileContent.WriteString(strconv.Itoa(dataVal))
-				}
- 			}
-			_, _ = f.WriteString(fileContent.String())
-			_ = f.Close()
-		}
-	}
-	dataFilesMutex.Unlock()
-}
+//// data for evaluation / plotting
+//var dataFilesMutex = &sync.Mutex{}
+//var dataFiles = make(map[string]*[][]int)
+//
+//// get pointer for adding data elements, not synced yet
+//func getFileData(filename string) *[][]int {
+//	dataFilesMutex.Lock()
+//	defer dataFilesMutex.Unlock()
+//	dataFiles[filename] = &[][]int{}
+//	return dataFiles[filename]
+//}
+//
+//// write collected data to files
+//func writeData() {
+//	dataFilesMutex.Lock()
+//	for dataFile, dataValues := range dataFiles {
+//		f, err := os.OpenFile(dataFile, os.O_CREATE|os.O_WRONLY, 0644)
+//		if err == nil {
+//			var fileContent strings.Builder
+//			for i, dataRow := range *dataValues {
+//				if i > 0 {
+//					fileContent.WriteByte('\n')
+//				}
+//				for j, dataVal := range dataRow {
+//					if j > 0 {
+//						fileContent.WriteByte('\t')
+//					}
+//					fileContent.WriteString(strconv.Itoa(dataVal))
+//				}
+// 			}
+//			_, _ = f.WriteString(fileContent.String())
+//			_ = f.Close()
+//		}
+//	}
+//	dataFilesMutex.Unlock()
+//}
 
 func main() {
 
@@ -97,11 +96,27 @@ func main() {
 	}
 
 	fmt.Println("(1.2) Creating the node")
-	// Open the repo
+
+	// Open repo and set config
 	repo, err := fsrepo.Open(repoPath)
 	if err != nil {
 		panic(err)
 	}
+	repoConf, err := repo.Config()
+	if err != nil {
+		panic(err)
+	}
+	repoConfNew, err := repoConf.Clone()
+	if err != nil {
+		panic(err)
+	}
+	// disable connection management
+	repoConfNew.Swarm.ConnMgr.Type = "none"
+	err = repo.SetConfig(repoConfNew)
+	if err != nil {
+		panic(err)
+	}
+
 	// Construct the node
 	nodeOptions := &core.BuildCfg{
 		Online:  true,
@@ -235,7 +250,7 @@ func main() {
 	// collect number of connected and known peers every 5s, try to connect to known peers
 	// write stats to log file peersStat.dat
 	go func() {
-		currentStat := getFileData("peersStat.dat")
+		currentStat := stats.NewFile("peersStat.dat")
 		for {
 			time.Sleep(time.Second*5)
 			knownPeers, err := ipfs.Swarm().KnownAddrs(ctx)
@@ -249,7 +264,7 @@ func main() {
 			manEstablished, manFailed, manInitiated := countConnections()
 			//log.Printf("\n\nCurrently known peers: %d; connected: %d; manually established: %d, man failed: %d, man initiated: %d",
 			//	len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
-			*currentStat = append(*currentStat, []int{len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated})
+			currentStat.AddInts(len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
 
 			for peerID, peerAddr := range knownPeers {
 				// check if already connected
@@ -273,7 +288,7 @@ func main() {
 			}
 		}
 	}()
-	defer writeData()
+	defer stats.WriteData()
 
 	log.Print("Press enter to stop...\n\n")
 	reader := bufio.NewReader(os.Stdin)

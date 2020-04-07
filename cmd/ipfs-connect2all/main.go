@@ -21,43 +21,6 @@ import (
 	"time"
 )
 
-//// data for evaluation / plotting
-//var dataFilesMutex = &sync.Mutex{}
-//var dataFiles = make(map[string]*[][]int)
-//
-//// get pointer for adding data elements, not synced yet
-//func getFileData(filename string) *[][]int {
-//	dataFilesMutex.Lock()
-//	defer dataFilesMutex.Unlock()
-//	dataFiles[filename] = &[][]int{}
-//	return dataFiles[filename]
-//}
-//
-//// write collected data to files
-//func writeData() {
-//	dataFilesMutex.Lock()
-//	for dataFile, dataValues := range dataFiles {
-//		f, err := os.OpenFile(dataFile, os.O_CREATE|os.O_WRONLY, 0644)
-//		if err == nil {
-//			var fileContent strings.Builder
-//			for i, dataRow := range *dataValues {
-//				if i > 0 {
-//					fileContent.WriteByte('\n')
-//				}
-//				for j, dataVal := range dataRow {
-//					if j > 0 {
-//						fileContent.WriteByte('\t')
-//					}
-//					fileContent.WriteString(strconv.Itoa(dataVal))
-//				}
-// 			}
-//			_, _ = f.WriteString(fileContent.String())
-//			_ = f.Close()
-//		}
-//	}
-//	dataFilesMutex.Unlock()
-//}
-
 func main() {
 
 	// some of the initialization steps are taken from the example go-ipfs-as-a-library in the go-ipfs project
@@ -250,7 +213,11 @@ func main() {
 	// collect number of connected and known peers every 5s, try to connect to known peers
 	// write stats to log file peersStat.dat
 	go func() {
-		currentStat := stats.NewFile("peersStat.dat")
+		currentStat := stats.NewFileWithCallback("peersStat.dat", func(row []float64) {
+			log.Printf("known=%d connected=%d established=%d failed=%d initiated=%d",
+				int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+		})
+
 		for {
 			time.Sleep(time.Second*5)
 			knownPeers, err := ipfs.Swarm().KnownAddrs(ctx)
@@ -262,8 +229,6 @@ func main() {
 				log.Printf("failed to get list of connected peers: %s", err)
 			}
 			manEstablished, manFailed, manInitiated := countConnections()
-			//log.Printf("\n\nCurrently known peers: %d; connected: %d; manually established: %d, man failed: %d, man initiated: %d",
-			//	len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
 			currentStat.AddInts(len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
 
 			for peerID, peerAddr := range knownPeers {
@@ -288,7 +253,18 @@ func main() {
 			}
 		}
 	}()
-	defer stats.WriteData()
+
+	// flush data to file every 30s and at the end
+	go func() {
+		for {
+			time.Sleep(time.Second*30)
+			errs := stats.FlushAll()
+			for _, err := range errs {
+				log.Printf("Stats flush error: %s", err.Error())
+			}
+		}
+	}()
+	defer stats.FlushAll()
 
 	log.Print("Press enter to stop...\n\n")
 	reader := bufio.NewReader(os.Stdin)

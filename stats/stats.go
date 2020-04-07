@@ -8,26 +8,44 @@ import (
 )
 
 type StatsFile struct {
+	filename string
 	dataPtr *[][]float64
 	dataMutex *sync.Mutex
+	callback func([]float64)
 }
 
 var statsFilesMutex = &sync.Mutex{}
-var statsFiles = make(map[string]StatsFile)
+var statsFiles = make([]*StatsFile, 0, 1)
 
 // get pointer for adding data elements, not synced yet
-func NewFile(filename string) StatsFile {
+func NewFile(filename string) *StatsFile {
 	statsFilesMutex.Lock()
 	defer statsFilesMutex.Unlock()
-	var ret StatsFile
+
+	ret := &StatsFile{}
+	ret.filename = filename
 	ret.dataPtr = &[][]float64{}
 	ret.dataMutex = &sync.Mutex{}
-	statsFiles[filename] = ret
+	ret.callback = nil
+
+	statsFiles = append(statsFiles, ret)
+	return ret
+}
+
+func NewFileWithCallback(filename string, callback func([]float64)) *StatsFile {
+	ret := NewFile(filename)
+	ret.callback = callback
 	return ret
 }
 
 func (statsFile *StatsFile) AddValues(values []float64) {
+	statsFile.dataMutex.Lock()
 	*statsFile.dataPtr = append(*statsFile.dataPtr, values)
+	statsFile.dataMutex.Unlock()
+
+	if statsFile.callback != nil {
+		statsFile.callback(values)
+	}
 }
 
 func (statsFile *StatsFile) AddFloats(values ...float64) {
@@ -42,43 +60,41 @@ func (statsFile *StatsFile) AddInts(intValues ...int) {
 	statsFile.AddValues(values)
 }
 
-func (statsFile *StatsFile) AddValuesTS(values []float64) {
+func (statsFile *StatsFile) Flush() error {
 	statsFile.dataMutex.Lock()
-	statsFile.AddValues(values)
-	statsFile.dataMutex.Unlock()
-}
-
-func (statsFile *StatsFile) AddFloatsTS(values []float64) {
-	statsFile.AddValuesTS(values)
-}
-
-func (statsFile *StatsFile) AddIntsTS(values []int) {
-	statsFile.dataMutex.Lock()
-	statsFile.AddInts(values...)
-	statsFile.dataMutex.Unlock()
+	defer statsFile.dataMutex.Unlock()
+	f, err := os.OpenFile(statsFile.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	var fileContent strings.Builder
+	for _, dataRow := range *statsFile.dataPtr {
+		for j, dataVal := range dataRow {
+			if j > 0 {
+				fileContent.WriteByte('\t')
+			}
+			fileContent.WriteString(fmt.Sprintf("%f", dataVal))
+		}
+		fileContent.WriteByte('\n')
+	}
+	statsFile.dataPtr = &[][]float64{}
+	_, err = f.WriteString(fileContent.String())
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // write collected data to files
-func WriteData() {
+func FlushAll() []error {
 	statsFilesMutex.Lock()
-	for dataFile, dataValues := range statsFiles {
-		f, err := os.OpenFile(dataFile, os.O_CREATE|os.O_WRONLY, 0644)
-		if err == nil {
-			var fileContent strings.Builder
-			for i, dataRow := range *dataValues.dataPtr {
-				if i > 0 {
-					fileContent.WriteByte('\n')
-				}
-				for j, dataVal := range dataRow {
-					if j > 0 {
-						fileContent.WriteByte('\t')
-					}
-					fileContent.WriteString(fmt.Sprintf("%f", dataVal))
-				}
-			}
-			_, _ = f.WriteString(fileContent.String())
-			_ = f.Close()
+	errs := make([]error, 0)
+	for _, statsFile := range statsFiles {
+		err := statsFile.Flush()
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
 	statsFilesMutex.Unlock()
+	return errs
 }

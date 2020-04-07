@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/go-ipfs/core/node/libp2p"
 	"github.com/ipfs/go-ipfs/plugin/loader"
 	"github.com/ipfs/go-ipfs/repo/fsrepo"
+	iface "github.com/ipfs/interface-go-ipfs-core"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"io/ioutil"
@@ -21,16 +22,12 @@ import (
 	"time"
 )
 
-func main() {
+// spawn node on temporary repository
+func ipfsInit(ctx context.Context) iface.CoreAPI {
 
 	// some of the initialization steps are taken from the example go-ipfs-as-a-library in the go-ipfs project
 
-	fmt.Println("(1) Setting up IPFS node")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	fmt.Println("(1.1) Spawning node on a temporary repo")
-	fmt.Println("(1.1.1) Setting up plugins")
+	// set up plugins
 	plugins, err := loader.NewPluginLoader(filepath.Join("", "plugins"))
 	if err != nil {
 		panic(fmt.Errorf("error loading plugins: %s", err))
@@ -42,40 +39,28 @@ func main() {
 		panic(fmt.Errorf("error initializing plugins: %s", err))
 	}
 
-	fmt.Println("(1.1.2) Creating temporary repo")
+	// create temporary repo
 	repoPath, err := ioutil.TempDir("", "ipfs-shell")
 	if err != nil {
 		panic(fmt.Errorf("failed to get temp dir: %s", err))
 	}
-	// Create a config with default options and a 2048 bit key
+
+	// Create config with a 2048 bit key
 	cfg, err := config.Init(ioutil.Discard, 2048)
 	if err != nil {
 		panic(err)
 	}
+	// disable connection management
+	cfg.Swarm.ConnMgr.Type = "none"
+
 	// Create the repo with the config
 	err = fsrepo.Init(repoPath, cfg)
 	if err != nil {
 		panic(fmt.Errorf("failed to init ephemeral node: %s", err))
 	}
 
-	fmt.Println("(1.2) Creating the node")
-
-	// Open repo and set config
+	// Open repo
 	repo, err := fsrepo.Open(repoPath)
-	if err != nil {
-		panic(err)
-	}
-	repoConf, err := repo.Config()
-	if err != nil {
-		panic(err)
-	}
-	repoConfNew, err := repoConf.Clone()
-	if err != nil {
-		panic(err)
-	}
-	// disable connection management
-	repoConfNew.Swarm.ConnMgr.Type = "none"
-	err = repo.SetConfig(repoConfNew)
 	if err != nil {
 		panic(err)
 	}
@@ -96,6 +81,16 @@ func main() {
 		panic(fmt.Errorf("failed to spawn ephemeral node: %s", err))
 	}
 	fmt.Println("IPFS node created successfully!")
+
+	return ipfs
+}
+
+func main() {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ipfs := ipfsInit(ctx)
 
 	// set bootstrap nodes
 	bootstrapNodes := []string{
@@ -159,7 +154,6 @@ func main() {
 	}
 
 	// connect to bootstrap peers
-	fmt.Println("(2) Connecting to bootstrap peers")
 	go func() {
 		var wg sync.WaitGroup
 		peerInfos := make(map[peer.ID]*peer.AddrInfo, len(bootstrapNodes))

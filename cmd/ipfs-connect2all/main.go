@@ -18,9 +18,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
+
+var configValues = make(map[string]string)
 
 // spawn node on temporary repository
 func ipfsInit(ctx context.Context) iface.CoreAPI {
@@ -50,8 +54,9 @@ func ipfsInit(ctx context.Context) iface.CoreAPI {
 	if err != nil {
 		panic(err)
 	}
-	// disable connection management
-	cfg.Swarm.ConnMgr.Type = "none"
+	// custom config values
+	cfg.Swarm.ConnMgr.Type = configValues["ConnMgrType"]
+	cfg.Swarm.ConnMgr.HighWater, _ = strconv.Atoi(configValues["ConnMgrHighWater"])
 
 	// Create the repo with the config
 	err = fsrepo.Init(repoPath, cfg)
@@ -86,6 +91,41 @@ func ipfsInit(ctx context.Context) iface.CoreAPI {
 }
 
 func main() {
+
+	// set config from command line arguments
+	configValues["ConnMgrType"] = "none"
+	configValues["ConnMgrHighWater"] = "0"
+	configValues["StatsFile"] = "peersStat.dat"
+	for _, arg := range os.Args[1:] {
+		if arg == "ConnMgrType=basic" {
+			fmt.Println("Running with basic connection manager")
+			configValues["ConnMgrType"] = "basic"
+		} else if len(arg) > 17 && arg[:17] == "ConnMgrHighWater=" {
+			_, err := strconv.Atoi(arg[17:])
+			if err == nil {
+				configValues["ConnMgrHighWater"] = arg[17:]
+				fmt.Printf("Running with ConnMgrHighWater=%s\n", arg[17:])
+			}
+		} else if arg == "LogToStdout" {
+			configValues["LogToStdout"] = "1"
+		} else if len(arg) > 10 && arg[:10] == "StatsFile=" {
+			configValues["StatsFile"] = arg[10:]
+		} else {
+			if arg != "-h" && arg != "--help" && strings.ToLower(arg) != "help" {
+				fmt.Printf("Unknown option %s, usage:\n", arg)
+			} else {
+				fmt.Println("Usage:")
+			}
+			fmt.Println("ipfs-connect2all [options]\n\n" +
+				"Available options:\n" +
+				"Help                      Show this help message and quit\n" +
+				"LogToStdout               Write stats to stdout\n" +
+				"StatsFile=<value>         Write to stats file <value> (default: peersStat.dat)\n" +
+				"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
+				"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)")
+			return
+		}
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -207,10 +247,15 @@ func main() {
 	// collect number of connected and known peers every 5s, try to connect to known peers
 	// write stats to log file peersStat.dat
 	go func() {
-		currentStat := stats.NewFileWithCallback("peersStat.dat", func(row []float64) {
-			log.Printf("known=%d connected=%d established=%d failed=%d initiated=%d",
-				int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
-		})
+		var currentStat *stats.StatsFile
+		if configValues["LogToStdout"] == "1" {
+			currentStat = stats.NewFileWithCallback(configValues["StatsFile"], func(row []float64) {
+				log.Printf("known=%d connected=%d established=%d failed=%d initiated=%d",
+					int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+			})
+		} else {
+			currentStat = stats.NewFile(configValues["StatsFile"])
+		}
 
 		for {
 			time.Sleep(time.Second*5)

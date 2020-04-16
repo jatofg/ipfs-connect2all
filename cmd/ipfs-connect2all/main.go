@@ -14,6 +14,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"io/ioutil"
+	"ipfs-connect2all/helpers"
 	"ipfs-connect2all/stats"
 	"log"
 	"os"
@@ -110,6 +111,8 @@ func main() {
 			configValues["LogToStdout"] = "1"
 		} else if len(arg) > 10 && arg[:10] == "StatsFile=" {
 			configValues["StatsFile"] = arg[10:]
+		} else if len(arg) > 19 && arg[:19] == "MeasureConnections=" {
+			configValues["MeasureConnections"] = arg[19:]
 		} else {
 			if arg != "-h" && arg != "--help" && strings.ToLower(arg) != "help" {
 				fmt.Printf("Unknown option %s, usage:\n", arg)
@@ -120,9 +123,11 @@ func main() {
 				"Available options:\n" +
 				"Help                      Show this help message and quit\n" +
 				"LogToStdout               Write stats to stdout\n" +
-				"StatsFile=<value>         Write to stats file <value> (default: peersStat.dat)\n" +
+				"StatsFile=<file>          Write to stats file <file> (default: peersStat.dat)\n" +
 				"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
-				"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)")
+				"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)\n" +
+				"MeasureConnections=<file> Track average connection time and write to <file> \n" +
+				"                          (default: no tracking, reduces concurrency)")
 			return
 		}
 	}
@@ -229,23 +234,54 @@ func main() {
 		wg.Wait()
 	}()
 
+	// duration measurement
+	connDurations := make([]time.Duration, 0, 10)
+	connDurationsSuccess := make([]time.Duration, 0, 10)
+	connDurationsFailure := make([]time.Duration, 0, 10)
+	connDurationsMutex := &sync.Mutex{}
+	_, measureConnections := configValues["MeasureConnections"]
+
 	// function to attempt to connect to a node and track progress
 	tryToConnect := func(peerInfo peer.AddrInfo) {
 		if !checkConnectionAndSetInitiated(peerInfo.ID) {
 			return
 		}
 
+		var startTime time.Time
+		var connDuration time.Duration
+		if measureConnections {
+			startTime = time.Now()
+		}
+
 		err := ipfs.Swarm().Connect(ctx, peerInfo)
+
+		if measureConnections {
+			connDuration = time.Now().Sub(startTime)
+		}
+
 		if err == nil {
 			setConnectionEstablished(peerInfo.ID)
+
+			if measureConnections {
+				connDurationsMutex.Lock()
+				connDurations = append(connDurations, connDuration)
+				connDurationsSuccess = append(connDurationsSuccess, connDuration)
+				connDurationsMutex.Unlock()
+			}
 		} else {
-			//log.Printf("Could not connect to peer: %s", err)
 			setConnectionFailed(peerInfo.ID)
+
+			if measureConnections {
+				connDurationsMutex.Lock()
+				connDurations = append(connDurations, connDuration)
+				connDurationsFailure = append(connDurationsFailure, connDuration)
+				connDurationsMutex.Unlock()
+			}
 		}
 	}
 
-	// collect number of connected and known peers every 5s, try to connect to known peers
-	// write stats to log file peersStat.dat
+	// collect number of connected and known peers and mean durations every 5s, try to connect to known peers
+	// write stats to log files
 	go func() {
 		var currentStat *stats.StatsFile
 		if configValues["LogToStdout"] == "1" {
@@ -255,6 +291,11 @@ func main() {
 			})
 		} else {
 			currentStat = stats.NewFile(configValues["StatsFile"])
+		}
+
+		var durationStat *stats.StatsFile
+		if measureConnections {
+			durationStat = stats.NewFile(configValues["MeasureConnections"])
 		}
 
 		for {
@@ -269,6 +310,14 @@ func main() {
 			}
 			manEstablished, manFailed, manInitiated := countConnections()
 			currentStat.AddInts(len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
+
+			if measureConnections {
+				connDurationsMutex.Lock()
+				durationStat.AddFloats(helpers.DurationSliceMean(connDurations, time.Millisecond),
+					helpers.DurationSliceMean(connDurationsSuccess, time.Millisecond),
+					helpers.DurationSliceMean(connDurationsFailure, time.Millisecond))
+				connDurationsMutex.Unlock()
+			}
 
 			for peerID, peerAddr := range knownPeers {
 				// check if already connected
@@ -293,7 +342,7 @@ func main() {
 		}
 	}()
 
-	// flush data to file every 30s and at the end
+	// flush data to files every 30s and at the end
 	go func() {
 		for {
 			time.Sleep(time.Second*30)

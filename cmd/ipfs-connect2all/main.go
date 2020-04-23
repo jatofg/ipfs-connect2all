@@ -15,6 +15,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"io/ioutil"
 	"ipfs-connect2all/helpers"
+	"ipfs-connect2all/input"
 	"ipfs-connect2all/stats"
 	"log"
 	"os"
@@ -97,6 +98,7 @@ func main() {
 	configValues["ConnMgrType"] = "none"
 	configValues["ConnMgrHighWater"] = "0"
 	configValues["StatsFile"] = "peersStat.dat"
+	configValues["DHTConnsPerSec"] = "5"
 	for _, arg := range os.Args[1:] {
 		if arg == "ConnMgrType=basic" {
 			fmt.Println("Running with basic connection manager")
@@ -113,6 +115,13 @@ func main() {
 			configValues["StatsFile"] = arg[10:]
 		} else if len(arg) > 19 && arg[:19] == "MeasureConnections=" {
 			configValues["MeasureConnections"] = arg[19:]
+		} else if len(arg) > 9 && arg[:9] == "DHTPeers=" {
+			configValues["DHTPeers"] = arg[9:]
+		} else if len(arg) > 15 && arg[:15] == "DHTConnsPerSec=" {
+			_, err := strconv.Atoi(arg[15:])
+			if err == nil {
+				configValues["DHTConnsPerSec"] = arg[15:]
+			}
 		} else {
 			if arg != "-h" && arg != "--help" && strings.ToLower(arg) != "help" {
 				fmt.Printf("Unknown option %s, usage:\n", arg)
@@ -127,7 +136,9 @@ func main() {
 				"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
 				"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)\n" +
 				"MeasureConnections=<file> Track average connection time and write to <file> \n" +
-				"                          (default: no tracking, reduces concurrency)")
+				"                          (default: no tracking, reduces concurrency)\n" +
+				"DHTPeers=<file>           Load visited peers from DHT scan from visitedPeers*.csv file <file>\n" +
+				"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT scan per second (default: 5)")
 			return
 		}
 	}
@@ -159,6 +170,7 @@ func main() {
 	connectionsInitiated := make(map[peer.ID]bool)
 	connectionsFailed := make(map[peer.ID]bool)
 	connectionsEstablished := make(map[peer.ID]bool)
+	connectionsSuccessful := make(map[peer.ID]bool)
 
 	checkConnectionAndSetInitiated := func(peerID peer.ID) bool {
 		connectionsMutex.Lock()
@@ -189,13 +201,14 @@ func main() {
 		delete(connectionsInitiated, peerID)
 		delete(connectionsFailed, peerID)
 		connectionsEstablished[peerID] = true
+		connectionsSuccessful[peerID] = true
 		connectionsMutex.Unlock()
 	}
 
-	countConnections := func() (int, int, int) {
+	countConnections := func() (int, int, int, int) {
 		connectionsMutex.Lock()
 		defer connectionsMutex.Unlock()
-		return len(connectionsEstablished), len(connectionsFailed), len(connectionsInitiated)
+		return len(connectionsEstablished), len(connectionsFailed), len(connectionsInitiated), len(connectionsSuccessful)
 	}
 
 	// connect to bootstrap peers
@@ -280,14 +293,44 @@ func main() {
 		}
 	}
 
+	tryToConnectWithWg := func(wg *sync.WaitGroup, peerInfo peer.AddrInfo) {
+		tryToConnect(peerInfo)
+		wg.Done()
+	}
+
+	// slowly insert peers from DHT scan, if requested
+	if _, useDht := configValues["DHTPeers"]; useDht {
+		go func() {
+			var wg sync.WaitGroup
+			dhtPeers, err := input.LoadVisitedPeers(configValues["DHTPeers"])
+			if err != nil {
+				log.Printf("Error loading peers from DHT scan: %s", err)
+			}
+			if dhtPeers != nil {
+				wg.Add(len(dhtPeers))
+				connsPerSecond, _ := strconv.Atoi(configValues["DHTConnsPerSec"])
+				connsLeft := connsPerSecond
+				for _, peerAddr := range dhtPeers {
+					if connsLeft < 1 {
+						time.Sleep(time.Second)
+						connsLeft = connsPerSecond
+					}
+					go tryToConnectWithWg(&wg, *peerAddr)
+					connsLeft--
+				}
+			}
+			wg.Wait()
+		}()
+	}
+
 	// collect number of connected and known peers and mean durations every 5s, try to connect to known peers
 	// write stats to log files
 	go func() {
 		var currentStat *stats.StatsFile
 		if configValues["LogToStdout"] == "1" {
 			currentStat = stats.NewFileWithCallback(configValues["StatsFile"], func(row []float64) {
-				log.Printf("known=%d connected=%d established=%d failed=%d initiated=%d",
-					int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]))
+				log.Printf("known=%d connected=%d established=%d failed=%d initiated=%d successful=%d",
+					int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]), int(row[5]))
 			})
 		} else {
 			currentStat = stats.NewFile(configValues["StatsFile"])
@@ -308,8 +351,9 @@ func main() {
 			if err != nil {
 				log.Printf("failed to get list of connected peers: %s", err)
 			}
-			manEstablished, manFailed, manInitiated := countConnections()
-			currentStat.AddInts(len(knownPeers), len(connectedPeers), manEstablished, manFailed, manInitiated)
+			manEstablished, manFailed, manInitiated, manSuccessful := countConnections()
+			currentStat.AddInts(len(knownPeers), len(connectedPeers),
+				manEstablished, manFailed, manInitiated, manSuccessful)
 
 			if measureConnections {
 				connDurationsMutex.Lock()
@@ -336,7 +380,7 @@ func main() {
 				}
 
 				if !alreadyConnected {
-					go tryToConnect(peer.AddrInfo{peerID, peerAddr})
+					go tryToConnect(peer.AddrInfo{ID: peerID, Addrs: peerAddr})
 				}
 			}
 		}

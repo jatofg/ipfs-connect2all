@@ -56,6 +56,8 @@ func ipfsInit(ctx context.Context) iface.CoreAPI {
 	if err != nil {
 		panic(err)
 	}
+	// use server profile to avoid problems
+	_ = config.Profiles["server"].Transform(cfg)
 	// custom config values
 	cfg.Swarm.ConnMgr.Type = configValues["ConnMgrType"]
 	cfg.Swarm.ConnMgr.HighWater, _ = strconv.Atoi(configValues["ConnMgrHighWater"])

@@ -329,18 +329,27 @@ func main() {
 	// write stats to log files
 	go func() {
 		var currentStat *stats.StatsFile
+		var err error
 		if configValues["LogToStdout"] == "1" {
-			currentStat = stats.NewFileWithCallback(configValues["StatsFile"], func(row []float64) {
+			currentStat, err = stats.NewFileWithCallback(configValues["StatsFile"], func(row []float64) {
 				log.Printf("known=%d connected=%d established=%d failed=%d initiated=%d successful=%d",
 					int(row[0]), int(row[1]), int(row[2]), int(row[3]), int(row[4]), int(row[5]))
 			})
 		} else {
-			currentStat = stats.NewFile(configValues["StatsFile"])
+			currentStat, err = stats.NewFile(configValues["StatsFile"])
+		}
+		if err != nil {
+			log.Printf("Error: Could not open stats file, connect2all will not work! Debug: %s", err.Error())
+			return
 		}
 
 		var durationStat *stats.StatsFile
 		if measureConnections {
-			durationStat = stats.NewFile(configValues["MeasureConnections"])
+			durationStat, err = stats.NewFile(configValues["MeasureConnections"])
+			if err != nil {
+				log.Printf("Error: Could not open duration stats file, connect2all will not collect duration stats! Debug: %s", err.Error())
+				measureConnections = false
+			}
 		}
 
 		for {
@@ -398,7 +407,7 @@ func main() {
 			}
 		}
 	}()
-	defer stats.FlushAll()
+	defer stats.FlushAndCloseAll()
 
 	log.Print("Press enter to stop...\n\n")
 	reader := bufio.NewReader(os.Stdin)

@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -96,53 +95,52 @@ func ipfsInit(ctx context.Context) iface.CoreAPI {
 
 func main() {
 
-	// set config from command line arguments
+	// default config values
 	configValues["ConnMgrType"] = "none"
 	configValues["ConnMgrHighWater"] = "0"
+	configValues["LogToStdout"] = ""
 	configValues["StatsFile"] = "peersStat.dat"
+	configValues["MeasureConnections"] = ""
+	configValues["DHTPeers"] = ""
 	configValues["DHTConnsPerSec"] = "5"
-	for _, arg := range os.Args[1:] {
-		if arg == "ConnMgrType=basic" {
-			fmt.Println("Running with basic connection manager")
-			configValues["ConnMgrType"] = "basic"
-		} else if len(arg) > 17 && arg[:17] == "ConnMgrHighWater=" {
-			_, err := strconv.Atoi(arg[17:])
-			if err == nil {
-				configValues["ConnMgrHighWater"] = arg[17:]
-				fmt.Printf("Running with ConnMgrHighWater=%s\n", arg[17:])
-			}
-		} else if arg == "LogToStdout" {
-			configValues["LogToStdout"] = "1"
-		} else if len(arg) > 10 && arg[:10] == "StatsFile=" {
-			configValues["StatsFile"] = arg[10:]
-		} else if len(arg) > 19 && arg[:19] == "MeasureConnections=" {
-			configValues["MeasureConnections"] = arg[19:]
-		} else if len(arg) > 9 && arg[:9] == "DHTPeers=" {
-			configValues["DHTPeers"] = arg[9:]
-		} else if len(arg) > 15 && arg[:15] == "DHTConnsPerSec=" {
-			_, err := strconv.Atoi(arg[15:])
-			if err == nil {
-				configValues["DHTConnsPerSec"] = arg[15:]
-			}
-		} else {
-			if arg != "-h" && arg != "--help" && strings.ToLower(arg) != "help" {
-				fmt.Printf("Unknown option %s, usage:\n", arg)
-			} else {
-				fmt.Println("Usage:")
-			}
-			fmt.Println("ipfs-connect2all [options]\n\n" +
-				"Available options:\n" +
-				"Help                      Show this help message and quit\n" +
-				"LogToStdout               Write stats to stdout\n" +
-				"StatsFile=<file>          Write to stats file <file> (default: peersStat.dat)\n" +
-				"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
-				"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)\n" +
-				"MeasureConnections=<file> Track average connection time and write to <file> \n" +
-				"                          (default: no tracking, reduces concurrency)\n" +
-				"DHTPeers=<file>           Load visited peers from DHT scan from visitedPeers*.csv file <file>\n" +
-				"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT scan per second (default: 5)")
-			return
-		}
+	configValues["Snapshots"] = ""
+	configValues["DateFormat"] = "06-01-02--15:04:05"
+	configValues["StatsInterval"] = "5s"
+	configValues["SnapshotInterval"] = "10m"
+
+	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
+	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
+		fmt.Println("Usage: ipfs-connect2all [options]\n\n" +
+			"Available options:\n" +
+			"Help                      Show this help message and quit\n" +
+			"LogToStdout               Write stats to stdout\n" +
+			"StatsFile=<file>          Write to stats file <file> (default: peersStat.dat)\n" +
+			"StatsInterval=<time>      Stats collecting interval (default: 5s) (units available: ms, s, m, h)\n" +
+			"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
+			"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)\n" +
+			"MeasureConnections=<file> Track average connection time and write to <file> \n" +
+			"                          (default: no tracking, reduces concurrency)\n" +
+			"DHTPeers=<file>           Load visited peers from DHT scan from visitedPeers*.csv file <file>\n" +
+			"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT scan per second (default: 5)\n" +
+			"Snapshots=<dir>           Write snapshots of currently known/... peers to files in <dir> (no trailing /)\n" +
+			"SnapshotInterval=<time>   Snapshot interval (default: 10m)\n" +
+			"DateFormat=<format>       Date format (Go-style) (default: 06-01-02--15:04:05)")
+		return
+	}
+
+	// constraints
+	if configValues["ConnMgrType"] == "basic" {
+		fmt.Println("Running with basic connection manager")
+	} else {
+		configValues["ConnMgrType"] = "none"
+	}
+	_, err := strconv.Atoi(configValues["ConnMgrHighWater"])
+	if err != nil {
+		configValues["ConnMgrHighWater"] = "0"
+	}
+	_, err = strconv.Atoi(configValues["DHTConnsPerSec"])
+	if err != nil {
+		configValues["DHTConnsPerSec"] = "5"
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -254,7 +252,7 @@ func main() {
 	connDurationsSuccess := make([]time.Duration, 0, 10)
 	connDurationsFailure := make([]time.Duration, 0, 10)
 	connDurationsMutex := &sync.Mutex{}
-	_, measureConnections := configValues["MeasureConnections"]
+	measureConnections := configValues["MeasureConnections"] != ""
 
 	// function to attempt to connect to a node and track progress
 	tryToConnect := func(peerInfo peer.AddrInfo) {
@@ -301,7 +299,7 @@ func main() {
 	}
 
 	// slowly insert peers from DHT scan, if requested
-	if _, useDht := configValues["DHTPeers"]; useDht {
+	if configValues["DHTPeers"] != "" {
 		go func() {
 			var wg sync.WaitGroup
 			dhtPeers, err := input.LoadVisitedPeers(configValues["DHTPeers"])
@@ -339,7 +337,7 @@ func main() {
 			currentStat, err = stats.NewFile(configValues["StatsFile"])
 		}
 		if err != nil {
-			log.Printf("Error: Could not open stats file, connect2all will not work! Debug: %s", err.Error())
+			panic("Error: Could not open stats file, connect2all will not work! Debug: " + err.Error())
 			return
 		}
 
@@ -353,7 +351,11 @@ func main() {
 		}
 
 		for {
-			time.Sleep(time.Second*5)
+			sleepDuration, err := time.ParseDuration(configValues["StatsInterval"])
+			if err != nil {
+				sleepDuration = time.Second*5
+			}
+			time.Sleep(sleepDuration)
 			knownPeers, err := ipfs.Swarm().KnownAddrs(ctx)
 			if err != nil {
 				log.Printf("failed to get list of known peers: %s", err)
@@ -396,6 +398,86 @@ func main() {
 			}
 		}
 	}()
+
+	// write snapshots once every 10 minutes as CSV
+	snapshotDir := configValues["Snapshots"]
+	if snapshotDir != "" {
+		go func() {
+			sdStat, err := os.Stat(snapshotDir)
+			if err != nil {
+				err2 := os.MkdirAll(snapshotDir, 0755)
+				if err2 != nil {
+					log.Printf("Directory %s could neither be accessed (error: %s) nor created (error: %s), " +
+						"not writing snapshots.", snapshotDir, err.Error(), err2.Error())
+					return
+				}
+			} else {
+				if !sdStat.IsDir() {
+					log.Printf("%s is not a directory, not writing snapshots.", snapshotDir)
+					return
+				}
+			}
+
+			dateFormat := configValues["DateFormat"]
+
+			for {
+				sleepDuration, err := time.ParseDuration(configValues["SnapshotInterval"])
+				if err != nil {
+					sleepDuration = time.Minute*10
+				}
+				time.Sleep(sleepDuration)
+
+				knownPeers, err := ipfs.Swarm().KnownAddrs(ctx)
+				if err != nil {
+					log.Printf("failed to get list of known peers: %s", err)
+					continue
+				}
+				err = helpers.WriteToCsv("known", snapshotDir, dateFormat,
+					helpers.TransformMAMapForCsv(knownPeers))
+				if err != nil {
+					log.Printf("failed to write list of known peers to file: %s", err)
+					continue
+				}
+
+				connPeers, err := ipfs.Swarm().Peers(ctx)
+				if err != nil {
+					log.Printf("failed to get list of connected peers: %s", err)
+					continue
+				}
+				err = helpers.WriteToCsv("connected", snapshotDir, dateFormat,
+					helpers.TransformConnInfoSliceForCsv(connPeers))
+				if err != nil {
+					log.Printf("failed to write list of connected peers to file: %s", err)
+					continue
+				}
+
+				connectionsMutex.Lock()
+				connEstablishedSlice := helpers.TransformBoolMapForCsv(connectionsEstablished)
+				connSuccessfulSlice := helpers.TransformBoolMapForCsv(connectionsSuccessful)
+				connFailedSlice := helpers.TransformBoolMapForCsv(connectionsFailed)
+				connectionsMutex.Unlock()
+
+				err = helpers.WriteToCsv("established", snapshotDir, dateFormat, connEstablishedSlice)
+				if err != nil {
+					log.Printf("failed to write list of established connections to file: %s", err)
+					continue
+				}
+
+				err = helpers.WriteToCsv("successful", snapshotDir, dateFormat, connSuccessfulSlice)
+				if err != nil {
+					log.Printf("failed to write list of successful connections to file: %s", err)
+					continue
+				}
+
+				err = helpers.WriteToCsv("failed", snapshotDir, dateFormat, connFailedSlice)
+				if err != nil {
+					log.Printf("failed to write list of failed connections to file: %s", err)
+					continue
+				}
+
+			}
+		}()
+	}
 
 	// flush data to files every 30s and at the end
 	go func() {

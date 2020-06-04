@@ -50,7 +50,10 @@ func LoadVisitedPeers(visitedPeersFile string) (map[peer.ID]*peer.AddrInfo, erro
 				return ret, errors.New("error parsing a multiaddr from visitedPeers file: " + err.Error())
 			}
 
-			peerOfMa := peer.ID(row[0])
+			peerOfMa, err := peer.IDFromString(row[0])
+			if err != nil {
+				return ret, errors.New("could not convert peer ID string representation to multihash: " + err.Error())
+			}
 			if _, exists := ret[peerOfMa]; !exists {
 				ret[peerOfMa] = &peer.AddrInfo{}
 				ret[peerOfMa].ID = peerOfMa

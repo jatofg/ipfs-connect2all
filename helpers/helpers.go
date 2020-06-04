@@ -1,6 +1,16 @@
 package helpers
 
-import "time"
+import (
+	"encoding/csv"
+	iface "github.com/ipfs/interface-go-ipfs-core"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/multiformats/go-multiaddr"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
 
 func DurationSliceMean(inp []time.Duration, unit time.Duration) float64 {
 	if len(inp) > 0 {
@@ -11,4 +21,94 @@ func DurationSliceMean(inp []time.Duration, unit time.Duration) float64 {
 		return float64(totalDuration) / float64(len(inp)) / float64(unit)
 	}
 	return 0
+}
+
+// returns false if unknown option has been encountered
+func LoadConfig(configMap *map[string]string, args []string) bool {
+	for _, arg := range args {
+		eqPos := strings.IndexByte(arg, '=')
+		if eqPos < 0 {
+			if _, optExists := (*configMap)[arg]; !optExists {
+				return false
+			}
+			(*configMap)[arg] = "1"
+		} else {
+			if _, optExists := (*configMap)[arg[:eqPos]]; !optExists {
+				return false
+			}
+			(*configMap)[arg[:eqPos]] = arg[eqPos+1:]
+		}
+	}
+	return true
+}
+
+func WriteToCsv(prefix string, snapshotDir string, dateFormat string, elements [][]string) error {
+	formattedDate := time.Now().Format(dateFormat)
+	filename := snapshotDir + "/" + prefix + "_" + formattedDate + ".csv"
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	csvWriter := csv.NewWriter(f)
+	csvWriter.Comma = ';'
+	err = csvWriter.WriteAll(elements)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func TransformSliceForCsv(in []string) [][]string {
+	out := make([][]string, len(in))
+	for i, e := range in {
+		out[i] = make([]string, 1)
+		out[i][0] = e
+	}
+	return out
+}
+
+func TransformMAMapForCsv(in map[peer.ID][]multiaddr.Multiaddr) [][]string {
+	out := make([][]string, len(in))
+	i := 0
+	for e, _ := range in {
+		out[i] = make([]string, 1)
+		out[i][0] = e.String()
+		i++
+	}
+	return out
+}
+
+func TransformBoolMapForCsv(in map[peer.ID]bool) [][]string {
+	out := make([][]string, len(in))
+	i := 0
+	for e, _ := range in {
+		out[i] = make([]string, 1)
+		out[i][0] = e.String()
+		i++
+	}
+	return out
+}
+
+func SupportedProtocolsToString(in []protocol.ID) string {
+	var out strings.Builder
+	for p := range in {
+		out.WriteString(strconv.Itoa(p))
+		out.WriteByte(',')
+	}
+	return out.String()
+}
+
+func TransformConnInfoSliceForCsv(in []iface.ConnectionInfo) [][]string {
+	out := make([][]string, len(in))
+	for i, e := range in {
+		out[i] = make([]string, 3)
+		out[i][0] = e.ID().String()
+		out[i][1] = strconv.Itoa(int(e.Direction()))
+		eStreams, err := e.Streams()
+		if err == nil {
+			out[i][2] = SupportedProtocolsToString(eStreams)
+		}
+	}
+	return out
 }

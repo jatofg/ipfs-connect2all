@@ -12,6 +12,37 @@ import (
 	"time"
 )
 
+func MakePeerAddrInfoMap(nodesStr []string) (map[peer.ID]*peer.AddrInfo, error) {
+	peerInfos := make(map[peer.ID]*peer.AddrInfo, len(nodesStr))
+	for _, addrStr := range nodesStr {
+		addr, err := multiaddr.NewMultiaddr(addrStr)
+		if err != nil {
+			return nil, err
+		}
+		addrInfo, err := peer.AddrInfoFromP2pAddr(addr)
+		if err != nil {
+			return nil, err
+		}
+		pi, ok := peerInfos[addrInfo.ID]
+		if !ok {
+			pi = &peer.AddrInfo{ID: addrInfo.ID}
+			peerInfos[pi.ID] = pi
+		}
+		pi.Addrs = append(pi.Addrs, addrInfo.Addrs...)
+	}
+	return peerInfos, nil
+}
+
+func PeerAddrInfoMapToSlice(pmap map[peer.ID]*peer.AddrInfo) []*peer.AddrInfo {
+	peerInfoSlice := make([]*peer.AddrInfo, len(pmap));
+	i := 0
+	for _, pi := range pmap {
+		peerInfoSlice[i] = pi
+		i++
+	}
+	return peerInfoSlice
+}
+
 func DurationSliceMean(inp []time.Duration, unit time.Duration) float64 {
 	if len(inp) > 0 {
 		var totalDuration time.Duration

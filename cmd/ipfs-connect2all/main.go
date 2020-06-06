@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multiaddr"
 	"ipfs-connect2all/helpers"
 	"ipfs-connect2all/input"
 	"ipfs-connect2all/stats"
@@ -31,24 +30,41 @@ func main() {
 	configValues["DateFormat"] = "06-01-02--15:04:05"
 	configValues["StatsInterval"] = "5s"
 	configValues["SnapshotInterval"] = "10m"
+	configValues["DHTCrawlInterval"] = ""
+	configValues["DHTCrawlOut"] = "crawls"
+	configValues["DHTPreImages"] = "precomputed_hashes/preimages.csv"
+	configValues["DHTQueueSize"] = "64384"
+	configValues["DHTCacheFile"] = "crawls/nodes.cache"
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
 		fmt.Println("Usage: ipfs-connect2all [options]\n\n" +
-			"Available options:\n" +
+
+			"General options:\n" +
 			"Help                      Show this help message and quit\n" +
 			"LogToStdout               Write stats to stdout\n" +
 			"StatsFile=<file>          Write to stats file <file> (default: peersStat.dat)\n" +
-			"StatsInterval=<time>      Stats collecting interval (default: 5s) (units available: ms, s, m, h)\n" +
+			"StatsInterval=<dur>       Stats collecting interval (default: 5s) (units available: ms, s, m, h)\n" +
 			"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
 			"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)\n" +
+			"DateFormat=<format>       Date format (Go-style) (default: 06-01-02--15:04:05)\n" +
 			"MeasureConnections=<file> Track average connection time and write to <file> \n" +
-			"                          (default: no tracking, reduces concurrency)\n" +
-			"DHTPeers=<file>           Load visited peers from DHT scan from visitedPeers*.csv file <file>\n" +
-			"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT scan per second (default: 5)\n" +
+			"                          (default: no tracking, reduces concurrency)\n\n" +
+
+			"Snapshot options:\n" +
 			"Snapshots=<dir>           Write snapshots of currently known/... peers to files in <dir> (no trailing /)\n" +
-			"SnapshotInterval=<time>   Snapshot interval (default: 10m)\n" +
-			"DateFormat=<format>       Date format (Go-style) (default: 06-01-02--15:04:05)")
+			"SnapshotInterval=<dur>    Snapshot interval (default: 10m)\n\n" +
+
+			"DHT scan options:\n" +
+			"DHTPeers=<file>           Load visited peers from DHT crawl from visitedPeers*.csv file <file>\n" +
+			"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT crawl per second (default: 5)\n\n" +
+
+			"ipfs-crawler integration options:\n" +
+			"DHTCrawlInterval=<dur>    Crawl the DHT automatically in intervals of <dur> (default: off)\n" +
+			"DHTCrawlOut=<dir>         Directory for saving the output files of DHT crawls (default: crawl)\n" +
+			"DHTPreImages=<file>       File with preimages for DHT crawls (default: precomputed_hashes/preimages.csv)\n" +
+			"DHTQueueSize=<size>       Queue size for DHT crawls (default: 64384)\n" +
+			"DHTCacheFile=<file>       Cache file for DHT crawls (default: crawls/nodes.cache; empty to disable caching)")
 		return
 	}
 
@@ -136,28 +152,15 @@ func main() {
 	}
 
 	// connect to bootstrap peers
+	bootstrapPeerInfos, err := helpers.MakePeerAddrInfoMap(bootstrapNodes)
+	if err != nil {
+		panic("Could not read list of bootstrap peers: " + err.Error())
+		return
+	}
 	go func() {
 		var wg sync.WaitGroup
-		peerInfos := make(map[peer.ID]*peer.AddrInfo, len(bootstrapNodes))
-		for _, addrStr := range bootstrapNodes {
-			addr, err := multiaddr.NewMultiaddr(addrStr)
-			if err != nil {
-				return
-			}
-			addrInfo, err := peer.AddrInfoFromP2pAddr(addr)
-			if err != nil {
-				return
-			}
-			pi, ok := peerInfos[addrInfo.ID]
-			if !ok {
-				pi = &peer.AddrInfo{ID: addrInfo.ID}
-				peerInfos[pi.ID] = pi
-			}
-			pi.Addrs = append(pi.Addrs, addrInfo.Addrs...)
-		}
-
-		wg.Add(len(peerInfos))
-		for _, peerInfo := range peerInfos {
+		wg.Add(len(bootstrapPeerInfos))
+		for _, peerInfo := range bootstrapPeerInfos {
 			go func(peerInfo *peer.AddrInfo) {
 				defer wg.Done()
 				setConnectionInitiated(peerInfo.ID)
@@ -244,6 +247,45 @@ func main() {
 				}
 			}
 			wg.Wait()
+		}()
+	}
+
+	// use ipfs-crawler to run DHT scans if requested
+	if configValues["DHTCrawlInterval"] != "" {
+		go func() {
+			var crawlActive sync.WaitGroup
+			for {
+				crawlActive.Add(1)
+				go func() {
+					var wg sync.WaitGroup
+					dhtPeers, err := input.CrawlDHT(configValues, helpers.PeerAddrInfoMapToSlice(bootstrapPeerInfos))
+					if err != nil {
+						log.Printf("Error crawling DHT: %s", err.Error())
+					}
+					if dhtPeers != nil {
+						wg.Add(len(dhtPeers))
+						connsPerSecond, _ := strconv.Atoi(configValues["DHTConnsPerSec"])
+						connsLeft := connsPerSecond
+						for _, peerAddr := range dhtPeers {
+							if connsLeft < 1 {
+								time.Sleep(time.Second)
+								connsLeft = connsPerSecond
+							}
+							go tryToConnectWithWg(&wg, *peerAddr)
+							connsLeft--
+						}
+					}
+					wg.Wait()
+					crawlActive.Done()
+				}()
+
+				interval, err := time.ParseDuration(configValues["DHTCrawlInterval"])
+				if err != nil {
+					interval = time.Hour*1
+				}
+				time.Sleep(interval)
+				crawlActive.Wait()
+			}
 		}()
 	}
 

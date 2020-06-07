@@ -60,6 +60,9 @@ func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) (
 
 	ret := make(map[peer.ID]*peer.AddrInfo)
 	for rID, rNode := range report.Nodes {
+		if !rNode.Reachable {
+			continue
+		}
 		addrInfo := &peer.AddrInfo{
 			ID: rID,
 			Addrs: rNode.MultiAddrs,

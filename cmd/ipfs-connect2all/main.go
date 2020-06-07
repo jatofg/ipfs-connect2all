@@ -44,27 +44,36 @@ func main() {
 			"Help                      Show this help message and quit\n" +
 			"LogToStdout               Write stats to stdout\n" +
 			"StatsFile=<file>          Write to stats file <file> (default: peersStat.dat)\n" +
-			"StatsInterval=<dur>       Stats collecting interval (default: 5s) (units available: ms, s, m, h)\n" +
+			"StatsInterval=<dur>       Stats collecting interval (default: 5s) \n" +
+			"                          (units available: ms, s, m, h)\n" +
 			"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
-			"ConnMgrHighWater=<value>  Max. number of peers in IPFS conn. manager (default: 0)\n" +
+			"ConnMgrHighWater=<value>  Max. number of peers in IPFS connection manager\n" +
+			"                          (default: 0)\n" +
 			"DateFormat=<format>       Date format (Go-style) (default: 06-01-02--15:04:05)\n" +
 			"MeasureConnections=<file> Track average connection time and write to <file> \n" +
 			"                          (default: no tracking, reduces concurrency)\n\n" +
 
 			"Snapshot options:\n" +
-			"Snapshots=<dir>           Write snapshots of currently known/... peers to files in <dir> (no trailing /)\n" +
+			"Snapshots=<dir>           Write snapshots of currently known/... peers to files\n" +
+			"                          in <dir> (no trailing /)\n" +
 			"SnapshotInterval=<dur>    Snapshot interval (default: 10m)\n\n" +
 
 			"DHT scan options:\n" +
-			"DHTPeers=<file>           Load visited peers from DHT crawl from visitedPeers*.csv file <file>\n" +
-			"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT crawl per second (default: 5)\n\n" +
+			"DHTPeers=<file>           Load visited peers from DHT crawl from \n" +
+			"                          visitedPeers*.csv file <file>\n" +
+			"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT crawl\n" +
+			"                          per second (default: 5)\n\n" +
 
 			"ipfs-crawler integration options:\n" +
-			"DHTCrawlInterval=<dur>    Crawl the DHT automatically in intervals of <dur> (default: off)\n" +
-			"DHTCrawlOut=<dir>         Directory for saving the output files of DHT crawls (default: crawl)\n" +
-			"DHTPreImages=<file>       File with preimages for DHT crawls (default: precomputed_hashes/preimages.csv)\n" +
+			"DHTCrawlInterval=<dur>    Crawl the DHT automatically in intervals of <dur>\n" +
+			"                          (default: off)\n" +
+			"DHTCrawlOut=<dir>         Directory for saving the output files of DHT crawls\n" +
+			"                          (default: crawl)\n" +
+			"DHTPreImages=<file>       File with preimages for DHT crawls\n" +
+			"                          (default: precomputed_hashes/preimages.csv)\n" +
 			"DHTQueueSize=<size>       Queue size for DHT crawls (default: 64384)\n" +
-			"DHTCacheFile=<file>       Cache file for DHT crawls (default: crawls/nodes.cache; empty to disable caching)")
+			"DHTCacheFile=<file>       Cache file for DHT crawls (default:\n" +
+			"                          crawls/nodes.cache; empty to disable caching)")
 		return
 	}
 

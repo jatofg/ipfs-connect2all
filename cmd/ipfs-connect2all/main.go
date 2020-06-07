@@ -78,9 +78,9 @@ func main() {
 	if err != nil {
 		connMgrHighWater = 0
 	}
-	_, err = strconv.Atoi(configValues["DHTConnsPerSec"])
+	dhtConnsPerSec, err := strconv.Atoi(configValues["DHTConnsPerSec"])
 	if err != nil {
-		configValues["DHTConnsPerSec"] = "5"
+		dhtConnsPerSec = 5
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -235,12 +235,11 @@ func main() {
 			}
 			if dhtPeers != nil {
 				wg.Add(len(dhtPeers))
-				connsPerSecond, _ := strconv.Atoi(configValues["DHTConnsPerSec"])
-				connsLeft := connsPerSecond
+				connsLeft := dhtConnsPerSec
 				for _, peerAddr := range dhtPeers {
 					if connsLeft < 1 {
 						time.Sleep(time.Second)
-						connsLeft = connsPerSecond
+						connsLeft = dhtConnsPerSec
 					}
 					go tryToConnectWithWg(&wg, *peerAddr)
 					connsLeft--
@@ -250,7 +249,7 @@ func main() {
 		}()
 	}
 
-	// use ipfs-crawler to run DHT scans if requested
+	// use ipfs-crawler to run DHT crawls if requested
 	if configValues["DHTCrawlInterval"] != "" {
 		go func() {
 			var crawlActive sync.WaitGroup
@@ -258,18 +257,14 @@ func main() {
 				crawlActive.Add(1)
 				go func() {
 					var wg sync.WaitGroup
-					dhtPeers, err := input.CrawlDHT(configValues, helpers.PeerAddrInfoMapToSlice(bootstrapPeerInfos))
-					if err != nil {
-						log.Printf("Error crawling DHT: %s", err.Error())
-					}
+					dhtPeers := input.CrawlDHT(configValues, helpers.PeerAddrInfoMapToSlice(bootstrapPeerInfos))
 					if dhtPeers != nil {
 						wg.Add(len(dhtPeers))
-						connsPerSecond, _ := strconv.Atoi(configValues["DHTConnsPerSec"])
-						connsLeft := connsPerSecond
+						connsLeft := dhtConnsPerSec
 						for _, peerAddr := range dhtPeers {
 							if connsLeft < 1 {
 								time.Sleep(time.Second)
-								connsLeft = connsPerSecond
+								connsLeft = dhtConnsPerSec
 							}
 							go tryToConnectWithWg(&wg, *peerAddr)
 							connsLeft--

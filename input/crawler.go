@@ -8,14 +8,14 @@ import (
 	"strconv"
 )
 
-func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) (map[peer.ID]*peer.AddrInfo, error) {
+func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) map[peer.ID]*peer.AddrInfo {
 
 	crawlManagerConfig := crawling.ConfigureCrawlerManager()
 	crawlManagerConfig.FilenameTimeFormat = configValues["DateFormat"]
 	crawlManagerConfig.OutPath = configValues["DHTCrawlOut"] + "/"
 
-	crawlerConfig := crawling.Configure()
-	crawlerConfig.PreImagePath = configValues["DHTPreImages"]
+	crawlWorkerConfig := crawling.Configure()
+	crawlWorkerConfig.PreImagePath = configValues["DHTPreImages"]
 
 	queueSize, err := strconv.Atoi(configValues["DHTQueueSize"])
 	if err != nil {
@@ -23,7 +23,7 @@ func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) (
 	}
 	cm := crawling.NewCrawlManagerV2WithConfig(queueSize, crawlManagerConfig)
 
-	worker := crawling.NewIPFSWorker(0, context.Background())
+	worker := crawling.NewIPFSWorkerWithConfig(0, context.Background(), crawlWorkerConfig)
 	cm.AddWorker(worker)
 
 	var bootstrapPeersWithCache []*peer.AddrInfo
@@ -61,5 +61,5 @@ func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) (
 		ret[rID] = addrInfo
 	}
 
-	return ret, nil
+	return ret
 }

@@ -260,13 +260,21 @@ func main() {
 
 	// use ipfs-crawler to run DHT crawls if requested
 	if configValues["DHTCrawlInterval"] != "" {
+		_, weakKeysAllowed := os.LookupEnv("LIBP2P_ALLOW_WEAK_RSA_KEYS")
+		if !weakKeysAllowed {
+			log.Println("Warning: LIBP2P_ALLOW_WEAK_RSA_KEYS not set, crawling might not find most nodes.")
+		}
+
 		go func() {
 			var crawlActive sync.WaitGroup
 			for {
 				crawlActive.Add(1)
 				go func() {
 					var wg sync.WaitGroup
-					dhtPeers := input.CrawlDHT(configValues, helpers.PeerAddrInfoMapToSlice(bootstrapPeerInfos))
+					dhtPeers, err := input.CrawlDHT(configValues, helpers.PeerAddrInfoMapToSlice(bootstrapPeerInfos))
+					if err != nil {
+						panic(err)
+					}
 					if dhtPeers != nil {
 						wg.Add(len(dhtPeers))
 						connsLeft := dhtConnsPerSec
@@ -373,19 +381,11 @@ func main() {
 	snapshotDir := configValues["Snapshots"]
 	if snapshotDir != "" {
 		go func() {
-			sdStat, err := os.Stat(snapshotDir)
+			err := helpers.CheckOrCreateDir(snapshotDir)
 			if err != nil {
-				err2 := os.MkdirAll(snapshotDir, 0755)
-				if err2 != nil {
-					log.Printf("Directory %s could neither be accessed (error: %s) nor created (error: %s), " +
-						"not writing snapshots.", snapshotDir, err.Error(), err2.Error())
-					return
-				}
-			} else {
-				if !sdStat.IsDir() {
-					log.Printf("%s is not a directory, not writing snapshots.", snapshotDir)
-					return
-				}
+				log.Printf("Directory %s could neither be accessed nor created (error: %s), " +
+					"not writing snapshots.", snapshotDir, err.Error())
+				return
 			}
 
 			dateFormat := configValues["DateFormat"]

@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"encoding/csv"
+	"errors"
 	iface "github.com/ipfs/interface-go-ipfs-core"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -71,6 +72,25 @@ func LoadConfig(configMap *map[string]string, args []string) bool {
 		}
 	}
 	return true
+}
+
+func CheckOrCreateDir(path string) error {
+	stat, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err2 := os.MkdirAll(path, 0755)
+			if err2 != nil {
+				return err2
+			}
+			return nil
+		} else {
+			return err
+		}
+	}
+	if !stat.IsDir() {
+		return errors.New("not a directory")
+	}
+	return nil
 }
 
 func WriteToCsv(prefix string, snapshotDir string, dateFormat string, elements [][]string) error {

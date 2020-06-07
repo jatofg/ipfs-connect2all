@@ -2,13 +2,19 @@ package input
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"ipfs-connect2all/helpers"
 	"ipfs-crawler/crawling"
 	"strconv"
 )
 
-func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) map[peer.ID]*peer.AddrInfo {
+func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) (map[peer.ID]*peer.AddrInfo, error) {
+
+	if err := helpers.CheckOrCreateDir(configValues["DHTCrawlOut"]); err != nil {
+		return nil, errors.New("Could not access or create crawl output directory: " + err.Error())
+	}
 
 	crawlManagerConfig := crawling.ConfigureCrawlerManager()
 	crawlManagerConfig.FilenameTimeFormat = configValues["DateFormat"]
@@ -61,5 +67,5 @@ func CrawlDHT(configValues map[string]string, bootstrapPeers []*peer.AddrInfo) m
 		ret[rID] = addrInfo
 	}
 
-	return ret
+	return ret, nil
 }

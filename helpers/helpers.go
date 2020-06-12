@@ -143,11 +143,13 @@ func TransformBoolMapForCsv(in map[peer.ID]bool) [][]string {
 }
 
 func SupportedProtocolsToString(in []protocol.ID) string {
-	inStr := make([]string, 0, len(in))
-	for _, p := range(in) {
-		inStr = append(inStr, string(p))
-	}
+	inStr := protocol.ConvertToStrings(in)
 	return strings.Join(inStr, ",")
+}
+
+func SupportedProtocolsFromString(in string) []protocol.ID {
+	retStr := strings.Split(in, ",")
+	return protocol.ConvertFromStrings(retStr)
 }
 
 func TransformConnInfoSliceForCsv(in []iface.ConnectionInfo) [][]string {

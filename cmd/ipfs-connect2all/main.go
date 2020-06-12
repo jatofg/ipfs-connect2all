@@ -60,7 +60,7 @@ func main() {
 
 			"DHT scan options:\n" +
 			"DHTPeers=<file>           Load visited peers from DHT crawl from \n" +
-			"                          visitedPeers*.csv file <file>\n" +
+			"                          visitedPeers*.json file <file>\n" +
 			"DHTConnsPerSec=<value>    Initiate <value> connections to peers from DHT crawl\n" +
 			"                          per second (default: 5)\n\n" +
 
@@ -238,10 +238,11 @@ func main() {
 	if configValues["DHTPeers"] != "" {
 		go func() {
 			var wg sync.WaitGroup
-			dhtPeers, err := input.LoadVisitedPeers(configValues["DHTPeers"])
+			visitedPeers, err := input.LoadVisitedPeers(configValues["DHTPeers"])
 			if err != nil {
 				log.Printf("Error loading peers from DHT scan: %s", err)
 			}
+			dhtPeers := input.VisitedPeersToAddrInfoMap(visitedPeers)
 			if dhtPeers != nil {
 				wg.Add(len(dhtPeers))
 				connsLeft := dhtConnsPerSec

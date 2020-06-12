@@ -7,7 +7,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/multiformats/go-multiaddr"
-	"ipfs-connect2all/input"
 	"os"
 	"strconv"
 	"strings"
@@ -164,15 +163,4 @@ func TransformConnInfoSliceForCsv(in []iface.ConnectionInfo) [][]string {
 		}
 	}
 	return out
-}
-
-func VisitedPeersToAddrInfoMap(visitedPeers map[peer.ID]*input.VisitedPeer) map[peer.ID]*peer.AddrInfo {
-	ret := make(map[peer.ID]*peer.AddrInfo)
-	for peerID, visitedPeer := range visitedPeers {
-		ret[peerID] = &peer.AddrInfo{
-			ID: visitedPeer.NodeID,
-			Addrs: visitedPeer.MultiAddrs,
-		}
-	}
-	return ret
 }

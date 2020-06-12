@@ -24,8 +24,8 @@ func main() {
 		fmt.Printf("Total number of peers: %d\n", len(peers))
 
 		for pID, pAI := range peers {
-			fmt.Printf("ID: %s\nID in AI:%s\n", pID, pAI.ID)
-			for i, addr := range pAI.Addrs {
+			fmt.Printf("ID: %s\nID in AI:%s\n", pID.String(), pAI.NodeID.String())
+			for i, addr := range pAI.MultiAddrs {
 				fmt.Printf("MA%d: %s\n", i, addr.String())
 			}
 			fmt.Println()

@@ -6,6 +6,7 @@ require (
 	github.com/ipfs/interface-go-ipfs-core v0.2.7
 	github.com/libp2p/go-libp2p-core v0.5.3
 	github.com/multiformats/go-multiaddr v0.2.1
+	github.com/prometheus/common v0.9.1
 	ipfs-crawler v0.0.0 //-20200603141538-ec2c9372e689
 )
 

@@ -7,6 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/multiformats/go-multiaddr"
+	"ipfs-connect2all/input"
 	"os"
 	"strconv"
 	"strings"
@@ -142,12 +143,11 @@ func TransformBoolMapForCsv(in map[peer.ID]bool) [][]string {
 }
 
 func SupportedProtocolsToString(in []protocol.ID) string {
-	var out strings.Builder
-	for p := range in {
-		out.WriteString(strconv.Itoa(p))
-		out.WriteByte(',')
+	inStr := make([]string, 0, len(in))
+	for _, p := range(in) {
+		inStr = append(inStr, string(p))
 	}
-	return out.String()
+	return strings.Join(inStr, ",")
 }
 
 func TransformConnInfoSliceForCsv(in []iface.ConnectionInfo) [][]string {
@@ -162,4 +162,15 @@ func TransformConnInfoSliceForCsv(in []iface.ConnectionInfo) [][]string {
 		}
 	}
 	return out
+}
+
+func VisitedPeersToAddrInfoMap(visitedPeers map[peer.ID]*input.VisitedPeer) map[peer.ID]*peer.AddrInfo {
+	ret := make(map[peer.ID]*peer.AddrInfo)
+	for peerID, visitedPeer := range visitedPeers {
+		ret[peerID] = &peer.AddrInfo{
+			ID: visitedPeer.NodeID,
+			Addrs: visitedPeer.MultiAddrs,
+		}
+	}
+	return ret
 }

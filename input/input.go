@@ -23,16 +23,16 @@ type VisitedPeer struct {
 }
 
 type visitedPeers_json struct {
-	start_timestamp string
-	end_timestamp string
-	Nodes []visitedPeer_json
+	Start_timestamp string
+	End_timestamp   string
+	Nodes           []visitedPeer_json
 }
 
 type visitedPeer_json struct {
-	NodeID string
-	MultiAddrs []string
-	reachable bool
-	agent_version string
+	NodeID        string
+	MultiAddrs    []string
+	Reachable     bool
+	Agent_version string
 }
 
 type ConnectedPeer struct {
@@ -57,7 +57,7 @@ func LoadVisitedPeers(visitedPeersFile string) (map[peer.ID]*VisitedPeer, error)
 
 	ret := make(map[peer.ID]*VisitedPeer)
 	for _, jsonVisitedPeer := range jsonVisitedPeers.Nodes {
-		id, err := peer.IDFromString(jsonVisitedPeer.NodeID)
+		id, err := peer.Decode(jsonVisitedPeer.NodeID)
 		if err != nil {
 			log.Warnln("Could not decode peer ID from visitedPeers file: " + err.Error())
 		}
@@ -72,8 +72,8 @@ func LoadVisitedPeers(visitedPeersFile string) (map[peer.ID]*VisitedPeer, error)
 		ret[id] = &VisitedPeer{
 			NodeID: id,
 			MultiAddrs: multiaddrs,
-			Reachable: jsonVisitedPeer.reachable,
-			AgentVersion: jsonVisitedPeer.agent_version,
+			Reachable: jsonVisitedPeer.Reachable,
+			AgentVersion: jsonVisitedPeer.Agent_version,
 		}
 	}
 	return ret, nil
@@ -94,7 +94,7 @@ func LoadConnectedPeers(connectedPeersFile string) (map[peer.ID]*ConnectedPeer, 
 			return ret, errors.New("Invalid CSV row length in connected peers file (should be at least 3)")
 		}
 
-		id, err := peer.IDFromString(row[0])
+		id, err := peer.Decode(row[0])
 		if err != nil {
 			return nil, errors.New("Could not decode peer ID from connected peers file: " + err.Error())
 		}
@@ -127,7 +127,7 @@ func LoadPeerList(peerListFile string) (map[peer.ID]peer.ID, error) {
 		if len(st) < 1 {
 			continue
 		}
- 		id, err := peer.IDFromString(st)
+ 		id, err := peer.Decode(st)
 		if err != nil {
 			return nil, errors.New("Could not convert peer ID from string while reading peer list file: " + err.Error())
 		}
@@ -136,12 +136,15 @@ func LoadPeerList(peerListFile string) (map[peer.ID]peer.ID, error) {
 	return ret, nil
 }
 
+// convert map from VisitedPeer map to peer.AddrInfo map, skipping unreachable peers
 func VisitedPeersToAddrInfoMap(visitedPeers map[peer.ID]*VisitedPeer) map[peer.ID]*peer.AddrInfo {
 	ret := make(map[peer.ID]*peer.AddrInfo)
 	for peerID, visitedPeer := range visitedPeers {
-		ret[peerID] = &peer.AddrInfo{
-			ID: visitedPeer.NodeID,
-			Addrs: visitedPeer.MultiAddrs,
+		if visitedPeer.Reachable {
+			ret[peerID] = &peer.AddrInfo{
+				ID: visitedPeer.NodeID,
+				Addrs: visitedPeer.MultiAddrs,
+			}
 		}
 	}
 	return ret

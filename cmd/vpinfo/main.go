@@ -18,10 +18,13 @@ func main() {
 		fmt.Printf("LVP error: %s\n", err)
 	}
 
+	reachablePeers := input.VisitedPeersToAddrInfoMap(peers)
+
 	limit := 10
 
 	if peers != nil {
 		fmt.Printf("Total number of peers: %d\n", len(peers))
+		fmt.Printf("Total number of reachable peers: %d\n", len(reachablePeers))
 
 		for pID, pAI := range peers {
 			fmt.Printf("ID: %s\nID in AI:%s\n", pID.String(), pAI.NodeID.String())

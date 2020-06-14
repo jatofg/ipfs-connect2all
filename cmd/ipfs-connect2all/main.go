@@ -38,7 +38,7 @@ func main() {
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
-		fmt.Println("Usage: ipfs-connect2all [options]\n\n" +
+		fmt.Println("Usage: ipfs_connect2all [options]\n\n" +
 
 			"General options:\n" +
 			"Help                      Show this help message and quit\n" +

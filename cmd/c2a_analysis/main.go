@@ -210,7 +210,7 @@ func main() {
 
 	failedButDhtReachable := 0
 	for peerID := range failedConnections {
-		if _, inDht := dhtPeers[peerID]; inDht {
+		if _, inDht := dhtPeers[peerID]; inDht && dhtPeers[peerID].Reachable {
 			failedButDhtReachable++
 		}
 	}

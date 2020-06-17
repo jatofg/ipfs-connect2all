@@ -41,6 +41,10 @@ type MapsForAnalysis struct {
 type ComparisonResult struct {
 	DhtPeers int
 	ReachableDhtPeers int
+	KnownPeers int
+	ConnectedPeers int
+	SuccessfulConnections int
+	FailedConnections int
 	DhtButNotKnown int
 	DhtButNotConnected int
 	DhtButNotSuccessful int
@@ -77,6 +81,23 @@ func GetCrawlAndSnapshotFiles(crawlPath string, snapshotPath string) (CrawlOrSna
 		ret = append(ret, CrawlOrSnapshotFile{Filename: sc, Directory: snapshotPath})
 	}
 	return ret, nil
+}
+
+func (candidates CrawlOrSnapshotFiles) GetTimestamps(startsWith string, dateFormat string) []time.Time {
+	ret := make([]time.Time, 0, len(candidates)/2)
+	for _, currentFile := range candidates {
+		datePos := len(startsWith)
+		currentFileName := currentFile.Filename
+		if len(currentFileName) <= datePos || currentFileName[0:datePos] != startsWith {
+			continue
+		}
+		currentTimestamp, err := time.Parse(dateFormat, currentFileName[datePos:datePos+len(dateFormat)])
+		if err != nil {
+			continue
+		}
+		ret = append(ret, currentTimestamp)
+	}
+	return ret
 }
 
 func (candidates CrawlOrSnapshotFiles) GetClosest(startsWith string, timestamp time.Time, dateFormat string) *CrawlOrSnapshotFile {
@@ -187,6 +208,10 @@ func CalculateComparisonResult(maps MapsForAnalysis) ComparisonResult {
 	var result ComparisonResult
 	result.DhtPeers = len(maps.VisitedPeers)
 	result.ReachableDhtPeers = result.DhtPeers
+	result.KnownPeers = len(maps.KnownPeers)
+	result.ConnectedPeers = len(maps.ConnectedPeers)
+	result.SuccessfulConnections = len(maps.SuccessfulConnections)
+	result.FailedConnections = len(maps.FailedConnections)
 
 	for dhtPeerID, dhtPeer := range maps.VisitedPeers {
 		if !dhtPeer.Reachable {

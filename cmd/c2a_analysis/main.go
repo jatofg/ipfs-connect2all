@@ -79,9 +79,11 @@ func main() {
 
 	comparisonResult := analysis.CalculateComparisonResult(*mapsForAnalysis)
 
-	fmt.Printf("Reachable DHT peers: %d (total: %d)\n", comparisonResult.ReachableDhtPeers, comparisonResult.DhtPeers)
-	fmt.Printf("Peers known: %d; connected: %d\n", len(mapsForAnalysis.KnownPeers), len(mapsForAnalysis.ConnectedPeers))
-	fmt.Printf("Connections successful: %d; failed: %d\n\n", len(mapsForAnalysis.SuccessfulConnections), len(mapsForAnalysis.FailedConnections))
+	fmt.Printf("Reachable DHT peers: %d (total: %d)\n", comparisonResult.ReachableDhtPeers,
+		comparisonResult.DhtPeers)
+	fmt.Printf("Peers known: %d; connected: %d\n", comparisonResult.KnownPeers, comparisonResult.ConnectedPeers)
+	fmt.Printf("Connections successful: %d; failed: %d\n\n", comparisonResult.SuccessfulConnections,
+		comparisonResult.FailedConnections)
 
 	fmt.Printf("DHT-reachable, but not c2a-known: %d\n", comparisonResult.DhtButNotKnown)
 	fmt.Printf("DHT-reachable, but not c2a-connected: %d\n", comparisonResult.DhtButNotConnected)

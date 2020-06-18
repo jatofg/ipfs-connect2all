@@ -130,9 +130,12 @@ func (candidates CrawlOrSnapshotFiles) GetClosest(startsWith string, timestamp t
 func GetFilesForAnalysis(inputFiles CrawlOrSnapshotFiles, crawlTimestamp time.Time, snapshotTimestamp time.Time,
 							dateFormat string) (*FilesForAnalysis, error) {
 
-	visitedPeersFile := inputFiles.GetClosest("visitedPeers_", crawlTimestamp, dateFormat)
-	if visitedPeersFile == nil {
-		return nil, errors.New("Error: No matching DHT crawl file found.")
+	var visitedPeersFile *CrawlOrSnapshotFile = nil
+	if !crawlTimestamp.IsZero() {
+		visitedPeersFile = inputFiles.GetClosest("visitedPeers_", crawlTimestamp, dateFormat)
+		if visitedPeersFile == nil {
+			return nil, errors.New("Error: No matching DHT crawl file found.")
+		}
 	}
 
 	knownFile := inputFiles.GetClosest("known_", snapshotTimestamp, dateFormat)
@@ -173,9 +176,13 @@ func GetFilesForAnalysis(inputFiles CrawlOrSnapshotFiles, crawlTimestamp time.Ti
 func GetMapsForAnalysis(filesForAnalysis FilesForAnalysis) (*MapsForAnalysis, error) {
 
 	// Peers found by DHT scan, but not by connect2all:
-	visitedPeers, err := input.LoadVisitedPeers(filesForAnalysis.VisitedPeersFile.GetPath())
-	if err != nil {
-		return nil, fmt.Errorf("DHT peers could not be loaded: %s", err.Error())
+	visitedPeers := make(map[peer.ID]*input.VisitedPeer)
+	if filesForAnalysis.VisitedPeersFile != nil {
+		var err error
+		visitedPeers, err = input.LoadVisitedPeers(filesForAnalysis.VisitedPeersFile.GetPath())
+		if err != nil {
+			return nil, fmt.Errorf("DHT peers could not be loaded: %s", err.Error())
+		}
 	}
 	knownPeers, err := input.LoadPeerList(filesForAnalysis.KnownPeersFile.GetPath())
 	if err != nil {

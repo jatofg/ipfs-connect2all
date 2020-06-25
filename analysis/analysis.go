@@ -200,11 +200,16 @@ func GetMapsForAnalysis(filesForAnalysis FilesForAnalysis) (*MapsForAnalysis, er
 	if err != nil {
 		return nil, fmt.Errorf("Failed connections could not be loaded: %s", err.Error())
 	}
+	establishedConnections, err := input.LoadPeerList(filesForAnalysis.EstablishedConnectionsFile.GetPath())
+	if err != nil {
+		return nil, fmt.Errorf("Established connections could not be loaded: %s", err.Error())
+	}
 
 	return &MapsForAnalysis{
 		VisitedPeers: visitedPeers,
 		KnownPeers: knownPeers,
 		ConnectedPeers: connectedPeers,
+		EstablishedConnections: establishedConnections,
 		SuccessfulConnections: successfulConnections,
 		FailedConnections: failedConnections,
 	}, nil

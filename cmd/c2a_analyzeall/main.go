@@ -12,10 +12,14 @@ import (
 	"time"
 )
 
-func calculateComparisons(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.CrawlOrSnapshotFiles, dateFormat string,
-		outDir string) {
+func calculateComparisons(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFiles, dateFormat string, outDir string) {
 	defer wg.Done()
-	timestamps := crawlAndSnapshotFiles.GetTimestamps("visitedPeers_", dateFormat)
+	timestamps := files.GetTimestamps("visitedPeers_", dateFormat)
+
+	// sort timestamps
+	sort.Slice(timestamps, func(i, j int) bool {
+		return timestamps[i].Before(timestamps[j])
+	})
 
 	addWholeResult := func(sf *stats.StatsFile, comparisonResult analysis.ComparisonResult) {
 		sf.AddInts(comparisonResult.DhtPeers, comparisonResult.ReachableDhtPeers, comparisonResult.KnownPeers,
@@ -57,7 +61,7 @@ func calculateComparisons(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.Cra
 
 		go func() {
 			defer wg.Done()
-			filesForAnalysis, err := analysis.GetFilesForAnalysis(crawlAndSnapshotFiles, ts, ts, dateFormat)
+			filesForAnalysis, err := analysis.GetFilesForAnalysis(files, ts, ts, dateFormat)
 			if err != nil {
 				return
 			}
@@ -71,7 +75,7 @@ func calculateComparisons(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.Cra
 
 		go func() {
 			defer wg.Done()
-			filesForAnalysis, err := analysis.GetFilesForAnalysis(crawlAndSnapshotFiles, ts, ts.Add(time.Minute*10),
+			filesForAnalysis, err := analysis.GetFilesForAnalysis(files, ts, ts.Add(time.Minute*10),
 				dateFormat)
 			if err != nil {
 				return
@@ -86,7 +90,7 @@ func calculateComparisons(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.Cra
 
 		go func() {
 			defer wg.Done()
-			filesForAnalysis, err := analysis.GetFilesForAnalysis(crawlAndSnapshotFiles, ts, ts.Add(time.Minute*20),
+			filesForAnalysis, err := analysis.GetFilesForAnalysis(files, ts, ts.Add(time.Minute*20),
 				dateFormat)
 			if err != nil {
 				return
@@ -101,7 +105,7 @@ func calculateComparisons(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.Cra
 
 		go func() {
 			defer wg.Done()
-			filesForAnalysis, err := analysis.GetFilesForAnalysis(crawlAndSnapshotFiles, ts, ts.Add(time.Minute*30),
+			filesForAnalysis, err := analysis.GetFilesForAnalysis(files, ts, ts.Add(time.Minute*30),
 				dateFormat)
 			if err != nil {
 				return
@@ -118,8 +122,8 @@ func calculateComparisons(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.Cra
 	}
 }
 
-func calculateChurn(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.CrawlOrSnapshotFiles, dateFormat string,
-		outDir string) {
+func calculateChurn(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFiles, dateFormat string, outDir string,
+					skipTotal bool) {
 	defer wg.Done()
 
 	// calculate:
@@ -133,7 +137,7 @@ func calculateChurn(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.CrawlOrSn
 	newPeersConnected := make(map[time.Time]int)
 	connectionsLost := make(map[time.Time]int)
 	connectionDurations := make(map[peer.ID]time.Duration)
-	timestamps := crawlAndSnapshotFiles.GetTimestamps("known_", dateFormat)
+	timestamps := files.GetTimestamps("known_", dateFormat)
 
 	// sort timestamps
 	sort.Slice(timestamps, func(i, j int) bool {
@@ -141,11 +145,26 @@ func calculateChurn(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.CrawlOrSn
 	})
 
 	// write stats files for points in time: newly known, newly connected, connection lost
-	sf, err := stats.NewFile(outDir + "/churn.dat")
+	sfChurn, err := stats.NewFile(outDir + "/churn.dat")
 	if err != nil {
 		panic(err.Error())
 	}
-	defer sf.FlushAndClose()
+	defer sfChurn.FlushAndClose()
+
+	// write stats files for total
+	var sfTotal *stats.StatsFile
+	if !skipTotal {
+		sfTotal, err = stats.NewFile(outDir + "/total.dat")
+		if err != nil {
+			panic(err.Error())
+		}
+		defer sfTotal.FlushAndClose()
+	}
+
+	addWholeResult := func(sf *stats.StatsFile, maps *analysis.MapsForAnalysis) {
+		sf.AddInts(len(maps.KnownPeers), len(maps.ConnectedPeers), len(maps.EstablishedConnections),
+			len(maps.FailedConnections), len(maps.SuccessfulConnections))
+	}
 
 	// analysis does not make sense with less than 2 timestamps
 	if len(timestamps) < 2 {
@@ -154,13 +173,17 @@ func calculateChurn(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.CrawlOrSn
 
 	lastTimestamp := timestamps[len(timestamps)-1]
 	for _, ts := range timestamps {
-		filesForAnalysis, err := analysis.GetFilesForAnalysis(crawlAndSnapshotFiles, time.Time{}, ts, dateFormat)
+		filesForAnalysis, err := analysis.GetFilesForAnalysis(files, time.Time{}, ts, dateFormat)
 		if err != nil {
 			continue
 		}
 		mapsForAnalysis, err := analysis.GetMapsForAnalysis(*filesForAnalysis)
 		if err != nil {
 			panic(err.Error())
+		}
+
+		if !skipTotal {
+			addWholeResult(sfTotal, mapsForAnalysis)
 		}
 
 		newPeersKnown[ts] = 0
@@ -185,7 +208,7 @@ func calculateChurn(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.CrawlOrSn
 			}
 		}
 		for _, td := range toDelete {
-			delete(alreadyKnownPeers, td)
+			delete(startOfConnection, td)
 		}
 
 		// newly connected peers
@@ -199,7 +222,7 @@ func calculateChurn(wg *sync.WaitGroup, crawlAndSnapshotFiles analysis.CrawlOrSn
 			}
 		}
 
-		sf.AddInts(newPeersKnown[ts], newPeersConnected[ts], connectionsLost[ts])
+		sfChurn.AddInts(newPeersKnown[ts], newPeersConnected[ts], connectionsLost[ts])
 	}
 	// peers still connected at the end
 	for stillConnectedPeer, connStarted := range startOfConnection {
@@ -233,6 +256,7 @@ func main() {
 	configValues["OutputDir"] = "analysis_result"
 	configValues["SkipComparisons"] = ""
 	configValues["SkipChurn"] = ""
+	configValues["SkipTotal"] = ""
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
@@ -247,7 +271,8 @@ func main() {
 			"OutputDir=<dir>           Directory to which the output files will be saved\n" +
 			"                          (default: analysis_result)\n" +
 			"SkipComparisons           Do not calculate comparisons\n" +
-			"SkipChurn                 Do not calculate churn")
+			"SkipChurn                 Do not calculate churn\n" +
+			"SkipTotal                 Do not record total numbers")
 		return
 	}
 
@@ -275,7 +300,7 @@ func main() {
 
 	if configValues["SkipChurn"] == "" {
 		wg.Add(1)
-		go calculateChurn(&wg, crawlAndSnapshotFiles, dateFormat, outDir)
+		go calculateChurn(&wg, crawlAndSnapshotFiles, dateFormat, outDir, configValues["SkipTotal"] == "1")
 	}
 
 	wg.Wait()

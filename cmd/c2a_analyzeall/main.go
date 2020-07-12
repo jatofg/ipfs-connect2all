@@ -260,7 +260,7 @@ func main() {
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
-		fmt.Println("Usage: c2a_analysis [options]\n\n" +
+		fmt.Println("Usage: c2a_analyzeall [options]\n\n" +
 
 			"Options:\n" +
 			"DateFormat=<format>       Date format (Go-style) (default: 06-01-02--15:04:05)\n" +

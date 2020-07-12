@@ -31,7 +31,7 @@ func main() {
 
 			"DHTCrawlDir=<dir>         Directory in which the snapshots are located\n" +
 			"SnapshotDir=<dir>         Directory in which the crawl output files are located\n" +
-			"SnapshotTS=<value>        Timestamp to use for snapshots (if given, the one" +
+			"SnapshotTS=<value>        Timestamp to use for snapshots (if given, the one\n" +
 			"                          from above will be used for the crawl only)")
 		return
 	}

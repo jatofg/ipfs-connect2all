@@ -8,6 +8,7 @@ import (
 	"ipfs-connect2all/stats"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -123,7 +124,7 @@ func calculateComparisons(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFile
 }
 
 func calculateChurn(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFiles, dateFormat string, outDir string,
-					skipTotal bool) {
+					skipTotal bool, durationBinWidth float64) {
 	defer wg.Done()
 
 	// calculate:
@@ -238,11 +239,42 @@ func calculateChurn(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFiles, dat
 		connDurSlice = append(connDurSlice, durMinutes)
 	}
 	sort.Float64s(connDurSlice)
+
+	connDurMax := connDurSlice[len(connDurSlice)-1]
+
+	// histogram from connection durations
+	sfDurations, err := stats.NewFile(outDir + "/durations.dat")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer sfDurations.FlushAndClose()
+	i := 0
+	type BinEntry struct {
+		limit float64
+		count int
+	}
+	bins := make([]BinEntry, 0, int((connDurMax + durationBinWidth)/durationBinWidth))
+	for limit := durationBinWidth; limit < connDurMax + durationBinWidth; limit += durationBinWidth {
+		var bin BinEntry
+		bin.limit = limit
+		bin.count = 0
+		for ; i < len(connDurSlice); i++ {
+			if connDurSlice[i] > limit {
+				break
+			}
+			bin.count++
+		}
+		bins = append(bins, bin)
+	}
+	for _, bin := range bins {
+		sfDurations.AddFloats(bin.limit, float64(bin.count))
+	}
+
 	fmt.Println("Please note: Precision is limited by the snapshot interval")
 	fmt.Printf("Mean connection duration in minutes: %f\n", connDurationSum/float64(len(connectionDurations)))
 	fmt.Printf("Median connection duration in minutes: %f\n", connDurSlice[len(connDurSlice)/2])
 	fmt.Printf("Shortest connection duration in minutes: %f\n", connDurSlice[0])
-	fmt.Printf("Longest connection duration in minutes: %f\n", connDurSlice[len(connDurSlice)-1])
+	fmt.Printf("Longest connection duration in minutes: %f\n", connDurMax)
 
 }
 
@@ -257,6 +289,7 @@ func main() {
 	configValues["SkipComparisons"] = ""
 	configValues["SkipChurn"] = ""
 	configValues["SkipTotal"] = ""
+	configValues["DurationBinWidth"] = "10"
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
@@ -272,7 +305,8 @@ func main() {
 			"                          (default: analysis_result)\n" +
 			"SkipComparisons           Do not calculate comparisons\n" +
 			"SkipChurn                 Do not calculate churn\n" +
-			"SkipTotal                 Do not record total numbers")
+			"SkipTotal                 Do not record total numbers\n" +
+			"DurationBinWidth=<int>    Width of duration histogram bins in minutes")
 		return
 	}
 
@@ -284,12 +318,18 @@ func main() {
 
 	// the numbers from c2a_analysis, but for all crawls
 	// load list of candidate files
-	crawlAndSnapshotFiles, err := analysis.GetCrawlAndSnapshotFiles(configValues["DHTCrawlDir"], configValues["SnapshotDir"])
+	crawlAndSnapshotFiles, err := analysis.GetCrawlAndSnapshotFiles(configValues["DHTCrawlDir"],
+		configValues["SnapshotDir"])
 	if err != nil {
 		panic(err.Error())
 	}
 	dateFormat := configValues["DateFormat"]
 	outDir := configValues["OutputDir"]
+
+	durationBinWidth, err := strconv.Atoi(configValues["DurationBinWidth"])
+	if err != nil {
+		durationBinWidth = 10
+	}
 
 	var wg sync.WaitGroup
 
@@ -300,7 +340,8 @@ func main() {
 
 	if configValues["SkipChurn"] == "" {
 		wg.Add(1)
-		go calculateChurn(&wg, crawlAndSnapshotFiles, dateFormat, outDir, configValues["SkipTotal"] == "1")
+		go calculateChurn(&wg, crawlAndSnapshotFiles, dateFormat, outDir, configValues["SkipTotal"] == "1",
+			float64(durationBinWidth))
 	}
 
 	wg.Wait()

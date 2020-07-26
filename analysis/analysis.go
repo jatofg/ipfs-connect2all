@@ -3,6 +3,7 @@ package analysis
 import (
 	"errors"
 	"fmt"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"ipfs-connect2all/input"
 	"os"
@@ -267,4 +268,18 @@ func CalculateComparisonResult(maps MapsForAnalysis) ComparisonResult {
 	}
 
 	return result
+}
+
+func CalculateDirections(connectedPeers map[peer.ID]*input.ConnectedPeer) (int, int) {
+	inbound := 0
+	outbound := 0
+	for _, connectedPeer := range connectedPeers {
+		switch connectedPeer.Direction {
+		case network.DirInbound:
+			inbound++
+		case network.DirOutbound:
+			outbound++
+		}
+	}
+	return inbound, outbound
 }

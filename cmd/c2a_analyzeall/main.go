@@ -124,7 +124,7 @@ func calculateComparisons(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFile
 }
 
 func calculateChurn(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFiles, dateFormat string, outDir string,
-					skipTotal bool, durationBinWidth float64) {
+					skipTotal bool, durationBinWidth float64, skipDirection bool) {
 	defer wg.Done()
 
 	// calculate:
@@ -162,6 +162,16 @@ func calculateChurn(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFiles, dat
 		defer sfTotal.FlushAndClose()
 	}
 
+	// write direction stats
+	var sfDirection *stats.StatsFile
+	if !skipDirection {
+		sfDirection, err = stats.NewFile(outDir + "/direction.dat")
+		if err != nil {
+			panic(err.Error())
+		}
+		defer sfDirection.FlushAndClose()
+	}
+
 	addWholeResult := func(sf *stats.StatsFile, maps *analysis.MapsForAnalysis) {
 		sf.AddInts(len(maps.KnownPeers), len(maps.ConnectedPeers), len(maps.EstablishedConnections),
 			len(maps.FailedConnections), len(maps.SuccessfulConnections))
@@ -185,6 +195,10 @@ func calculateChurn(wg *sync.WaitGroup, files analysis.CrawlOrSnapshotFiles, dat
 
 		if !skipTotal {
 			addWholeResult(sfTotal, mapsForAnalysis)
+		}
+
+		if !skipDirection {
+			sfDirection.AddInts(analysis.CalculateDirections(mapsForAnalysis.ConnectedPeers))
 		}
 
 		newPeersKnown[ts] = 0
@@ -290,6 +304,7 @@ func main() {
 	configValues["SkipChurn"] = ""
 	configValues["SkipTotal"] = ""
 	configValues["DurationBinWidth"] = "10"
+	configValues["SkipDirection"] = ""
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
@@ -306,7 +321,8 @@ func main() {
 			"SkipComparisons           Do not calculate comparisons\n" +
 			"SkipChurn                 Do not calculate churn\n" +
 			"SkipTotal                 Do not record total numbers\n" +
-			"DurationBinWidth=<int>    Width of duration histogram bins in minutes")
+			"DurationBinWidth=<int>    Width of duration histogram bins in minutes\n" +
+			"SkipDirection             Do not calculate connection directions")
 		return
 	}
 
@@ -341,7 +357,7 @@ func main() {
 	if configValues["SkipChurn"] == "" {
 		wg.Add(1)
 		go calculateChurn(&wg, crawlAndSnapshotFiles, dateFormat, outDir, configValues["SkipTotal"] == "1",
-			float64(durationBinWidth))
+			float64(durationBinWidth), configValues["SkipDirection"] == "1")
 	}
 
 	wg.Wait()

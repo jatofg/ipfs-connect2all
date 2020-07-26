@@ -135,6 +135,8 @@ OutputDir=<dir>           Directory to which the output files will be saved
 SkipComparisons           Do not calculate comparisons
 SkipChurn                 Do not calculate churn
 SkipTotal                 Do not record total numbers
+DurationBinWidth=<int>    Width of duration histogram bins in minutes
+SkipDirection             Do not calculate connection directions
 ```
 
 ### Statistical output files
@@ -189,6 +191,27 @@ for each snapshot.
 1. Newly known peers (since the last snapshot)
 1. New connections (since the last snapshot)
 1. Lost connections (since the last snapshot)
+
+#### Snapshot durations file
+durations.dat
+
+Contains data for a histogram of connection durations (influenced by the 
+`DurationBinWidth` argument.
+
+**Columns:**
+
+1. Bin limit *x* in minutes.
+1. Number of peers in this bin, i.e., with a connection duration in the interval 
+   [*x*-`DurationBinWidth`, *x*).
+
+#### Connection directions file
+directions.dat
+
+Contains the number of inbound and outbound connections in each snapshot.
+
+**Columns:**
+1. Inbound connections
+1. Outbound connections
 
 ## Scripts
 

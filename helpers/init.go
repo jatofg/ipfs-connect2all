@@ -15,7 +15,7 @@ import (
 )
 
 // spawn node on temporary repository
-func InitIpfs(ctx context.Context, connMgrType string, connMgrHighWater int) iface.CoreAPI {
+func InitIpfs(ctx context.Context, connMgrType string, connMgrHighWater int, portPrefix string) iface.CoreAPI {
 
 	// some of the initialization steps are taken from the example go-ipfs-as-a-library in the go-ipfs project
 
@@ -45,6 +45,12 @@ func InitIpfs(ctx context.Context, connMgrType string, connMgrHighWater int) ifa
 	// use server profile to avoid problems
 	_ = config.Profiles["server"].Transform(cfg)
 	// custom config values
+	cfg.Addresses.Swarm = []string{"/ip4/0.0.0.0/tcp/" + portPrefix + "4001",
+		                           "/ip6/::/tcp/" + portPrefix + "4001",
+		                           "/ip4/0.0.0.0/udp/" + portPrefix + "4001/quic",
+		                           "/ip6/::/udp/" + portPrefix + "4001/quic"}
+	cfg.Addresses.API = []string{"/ip4/127.0.0.1/tcp/" + portPrefix + "5001"}
+	cfg.Addresses.Gateway = []string{"/ip4/127.0.0.1/tcp/" + portPrefix + "8080"}
 	cfg.Swarm.ConnMgr.Type = connMgrType
 	cfg.Swarm.ConnMgr.HighWater = connMgrHighWater
 

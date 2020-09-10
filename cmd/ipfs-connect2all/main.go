@@ -21,6 +21,7 @@ func main() {
 	var configValues = make(map[string]string)
 	configValues["ConnMgrType"] = "none"
 	configValues["ConnMgrHighWater"] = "0"
+	configValues["PortPrefix"] = ""
 	configValues["LogToStdout"] = ""
 	configValues["StatsFile"] = "peersStat.dat"
 	configValues["MeasureConnections"] = ""
@@ -49,6 +50,8 @@ func main() {
 			"ConnMgrType=basic         Use basic IPFS connection manager (instead of none)\n" +
 			"ConnMgrHighWater=<value>  Max. number of peers in IPFS connection manager\n" +
 			"                          (default: 0)\n" +
+			"PortPrefix=<x>            Prefix for IPFS' default ports (<x>4001, <x>4551, \n" +
+			"                          <x>8080, <x> in range 0 to 5, default: 0 [no prefix])\n" +
 			"DateFormat=<format>       Date format (Go-style) (default: 06-01-02--15:04:05)\n" +
 			"MeasureConnections=<file> Track average connection time and write to <file> \n" +
 			"                          (default: no tracking, reduces concurrency)\n\n" +
@@ -91,11 +94,19 @@ func main() {
 	if err != nil {
 		dhtConnsPerSec = 5
 	}
+	portPrefixNum, err := strconv.Atoi(configValues["PortPrefix"])
+	if err != nil || portPrefixNum < 0 || portPrefixNum > 5 {
+		portPrefixNum = 0
+	}
+	portPrefixStr := strconv.Itoa(portPrefixNum)
+	if portPrefixNum == 0 {
+		portPrefixStr = ""
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ipfs := helpers.InitIpfs(ctx, configValues["ConnMgrType"], connMgrHighWater)
+	ipfs := helpers.InitIpfs(ctx, configValues["ConnMgrType"], connMgrHighWater, portPrefixStr)
 
 	// set bootstrap nodes
 	bootstrapNodes := []string{

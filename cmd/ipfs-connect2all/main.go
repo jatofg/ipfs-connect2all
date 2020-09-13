@@ -36,6 +36,9 @@ func main() {
 	configValues["DHTPreImages"] = "precomputed_hashes/preimages.csv"
 	configValues["DHTQueueSize"] = "64384"
 	configValues["DHTCacheFile"] = "crawls/nodes.cache"
+	configValues["WantlistSnapshots"] = ""
+	configValues["WantlistInterval"] = "1m"
+	configValues["DoNotResetWantlistCache"] = ""
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
@@ -58,7 +61,7 @@ func main() {
 
 			"Snapshot options:\n" +
 			"Snapshots=<dir>           Write snapshots of currently known/... peers to files\n" +
-			"                          in <dir> (no trailing /)\n" +
+			"                          in <dir> (no trailing /, default: off)\n" +
 			"SnapshotInterval=<dur>    Snapshot interval (default: 10m)\n\n" +
 
 			"DHT scan options:\n" +
@@ -76,7 +79,12 @@ func main() {
 			"                          (default: precomputed_hashes/preimages.csv)\n" +
 			"DHTQueueSize=<size>       Queue size for DHT crawls (default: 64384)\n" +
 			"DHTCacheFile=<file>       Cache file for DHT crawls (default:\n" +
-			"                          crawls/nodes.cache; empty to disable caching)")
+			"                          crawls/nodes.cache; empty to disable caching)\n\n" +
+			"Wantlist evaluation options:\n" +
+			"WantlistSnapshots=<dir>   Write snapshots of collected wantlists to files \n" +
+			"                          in <dir> (no trailing /, default: off)\n" +
+			"WantlistInterval=<dur>    Wantlist snapshot interval (default: 1m)\n" +
+			"DoNotResetWantlistCache   Do not reset wantlist cache after writing snapshot")
 		return
 	}
 
@@ -102,11 +110,20 @@ func main() {
 	if portPrefixNum == 0 {
 		portPrefixStr = ""
 	}
+	wantlistInterval, err := time.ParseDuration(configValues["WantlistInterval"])
+	if err != nil {
+		wantlistInterval = time.Minute
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	ipfs := helpers.InitIpfs(ctx, configValues["ConnMgrType"], connMgrHighWater, portPrefixStr)
+
+	if configValues["WantlistSnapshots"] != "" {
+		helpers.InitWantlistAnalysis(configValues["WantlistSnapshots"], wantlistInterval,
+			configValues["DoNotResetWantlistCache"] != "1", configValues["DateFormat"])
+	}
 
 	// set bootstrap nodes
 	bootstrapNodes := []string{

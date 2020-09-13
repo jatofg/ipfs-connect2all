@@ -3,6 +3,9 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"github.com/ipfs/go-bitswap/decision"
+	"github.com/ipfs/go-bitswap/message"
+	"github.com/ipfs/go-cid"
 	config "github.com/ipfs/go-ipfs-config"
 	"github.com/ipfs/go-ipfs/core"
 	"github.com/ipfs/go-ipfs/core/coreapi"
@@ -10,8 +13,13 @@ import (
 	"github.com/ipfs/go-ipfs/plugin/loader"
 	"github.com/ipfs/go-ipfs/repo/fsrepo"
 	iface "github.com/ipfs/interface-go-ipfs-core"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"io/ioutil"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // spawn node on temporary repository
@@ -84,4 +92,78 @@ func InitIpfs(ctx context.Context, connMgrType string, connMgrHighWater int, por
 	fmt.Println("IPFS node created successfully!")
 
 	return ipfs
+}
+
+func InitWantlistAnalysis(outfileDir string, snapshotInterval time.Duration, resetCache bool, dateFormat string) {
+	decision.EnableWantlistCaching(true)
+	go func() {
+		err := CheckOrCreateDir(outfileDir)
+		if err != nil {
+			return
+		}
+
+		for {
+			time.Sleep(snapshotInterval)
+			var wantLists map[peer.ID]map[cid.Cid]message.WantlistCacheEntry
+			if resetCache {
+				wantLists = decision.GetAndResetWantlistCache()
+			} else {
+				wantLists = decision.GetWantlistCache()
+			}
+			formattedDate := time.Now().Format(dateFormat)
+			filename := outfileDir + "/wantlistLog_" + formattedDate + ".json"
+			f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {
+				return
+			}
+			// TODO write json, problem: only strings as map types are allowed -> manually or write converter?
+			var sb strings.Builder
+			sb.WriteString("{\n")
+			first0 := true
+			for peerID, entryMap := range wantLists {
+				if first0 {
+					first0 = false
+				} else {
+					sb.WriteString(",\n")
+				}
+				sb.WriteByte('"')
+				sb.WriteString(peerID.Pretty())
+				sb.WriteString("\" : {\n")
+				first1 := true
+				for contentID, entry := range entryMap {
+					if first1 {
+						first1 = false
+					} else {
+						sb.WriteString(",\n")
+					}
+					sb.WriteByte('"')
+					sb.WriteString(contentID.String())
+					sb.WriteString("\" : { \"FirstWantHave\": \"")
+					sb.WriteString(entry.FirstWantHave.String())
+					sb.WriteString("\", \"LastWantHave\": \"")
+					sb.WriteString(entry.LastWantHave.String())
+					sb.WriteString("\", \"NumWantHave\": ")
+					sb.WriteString(strconv.Itoa(entry.NumWantHave))
+					sb.WriteString(", \"FirstWantBlock\": \"")
+					sb.WriteString(entry.FirstWantBlock.String())
+					sb.WriteString("\", \"LastWantBlock\": \"")
+					sb.WriteString(entry.LastWantBlock.String())
+					sb.WriteString("\", \"NumWantBlock\": ")
+					sb.WriteString(strconv.Itoa(entry.NumWantBlock))
+					sb.WriteString(" }")
+				}
+				sb.WriteString("\n}")
+			}
+			sb.WriteString("\n}")
+			_, err = f.WriteString(sb.String())
+			if err != nil {
+				return
+			}
+			err = f.Sync()
+			if err != nil {
+				return
+			}
+			f.Close()
+		}
+	}()
 }

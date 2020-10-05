@@ -54,9 +54,9 @@ func InitIpfs(ctx context.Context, connMgrType string, connMgrHighWater int, por
 	_ = config.Profiles["server"].Transform(cfg)
 	// custom config values
 	cfg.Addresses.Swarm = []string{"/ip4/0.0.0.0/tcp/" + portPrefix + "4001",
-		                           "/ip6/::/tcp/" + portPrefix + "4001",
-		                           "/ip4/0.0.0.0/udp/" + portPrefix + "4001/quic",
-		                           "/ip6/::/udp/" + portPrefix + "4001/quic"}
+		"/ip6/::/tcp/" + portPrefix + "4001",
+		"/ip4/0.0.0.0/udp/" + portPrefix + "4001/quic",
+		"/ip6/::/udp/" + portPrefix + "4001/quic"}
 	cfg.Addresses.API = []string{"/ip4/127.0.0.1/tcp/" + portPrefix + "5001"}
 	cfg.Addresses.Gateway = []string{"/ip4/127.0.0.1/tcp/" + portPrefix + "8080"}
 	cfg.Swarm.ConnMgr.Type = connMgrType
@@ -94,7 +94,9 @@ func InitIpfs(ctx context.Context, connMgrType string, connMgrHighWater int, por
 	return ipfs
 }
 
-func InitWantlistAnalysis(outfileDir string, snapshotInterval time.Duration, resetCache bool, dateFormat string) {
+func InitWantlistAnalysis(outfileDir string, snapshotInterval time.Duration, resetCache bool, dateFormat string,
+	wantlistOfPeers map[peer.ID]bool) {
+	decision.SetWantlistFilter(wantlistOfPeers)
 	decision.EnableWantlistCaching(true)
 	go func() {
 		err := CheckOrCreateDir(outfileDir)

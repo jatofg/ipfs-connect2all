@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -39,6 +40,7 @@ func main() {
 	configValues["WantlistSnapshots"] = ""
 	configValues["WantlistInterval"] = "1m"
 	configValues["DoNotResetWantlistCache"] = ""
+	configValues["WantlistOfPeers"] = ""
 
 	// load config from command line and display help upon encountering bad options (including -h/--help/Help/help/...)
 	if !helpers.LoadConfig(&configValues, os.Args[1:]) {
@@ -84,11 +86,12 @@ func main() {
 			"WantlistSnapshots=<dir>   Write snapshots of collected wantlists to files \n" +
 			"                          in <dir> (no trailing /, default: off)\n" +
 			"WantlistInterval=<dur>    Wantlist snapshot interval (default: 1m)\n" +
-			"DoNotResetWantlistCache   Do not reset wantlist cache after writing snapshot")
+			"DoNotResetWantlistCache   Do not reset wantlist cache after writing snapshot\n" +
+			"WantlistOfPeers=<ids>     Comma-separated list of source peer IDs (def.: all)")
 		return
 	}
 
-	// constraints
+	// constraints and conversions
 	if configValues["ConnMgrType"] == "basic" {
 		fmt.Println("Running with basic connection manager")
 	} else {
@@ -114,6 +117,17 @@ func main() {
 	if err != nil {
 		wantlistInterval = time.Minute
 	}
+	wantlistOfPeers := make(map[peer.ID]bool)
+	if configValues["WantlistOfPeers"] != "" {
+		wopStrings := strings.Split(configValues["WantlistOfPeers"], ",")
+		for _, s := range wopStrings {
+			pid, err := peer.Decode(s)
+			if err != nil {
+				continue
+			}
+			wantlistOfPeers[pid] = true
+		}
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -122,7 +136,7 @@ func main() {
 
 	if configValues["WantlistSnapshots"] != "" {
 		helpers.InitWantlistAnalysis(configValues["WantlistSnapshots"], wantlistInterval,
-			configValues["DoNotResetWantlistCache"] != "1", configValues["DateFormat"])
+			configValues["DoNotResetWantlistCache"] != "1", configValues["DateFormat"], wantlistOfPeers)
 	}
 
 	// set bootstrap nodes
@@ -322,7 +336,7 @@ func main() {
 
 				interval, err := time.ParseDuration(configValues["DHTCrawlInterval"])
 				if err != nil {
-					interval = time.Hour*1
+					interval = time.Hour * 1
 				}
 				time.Sleep(interval)
 				crawlActive.Wait()
@@ -360,7 +374,7 @@ func main() {
 		for {
 			sleepDuration, err := time.ParseDuration(configValues["StatsInterval"])
 			if err != nil {
-				sleepDuration = time.Second*5
+				sleepDuration = time.Second * 5
 			}
 			time.Sleep(sleepDuration)
 			knownPeers, err := ipfs.Swarm().KnownAddrs(ctx)
@@ -412,7 +426,7 @@ func main() {
 		go func() {
 			err := helpers.CheckOrCreateDir(snapshotDir)
 			if err != nil {
-				log.Printf("Directory %s could neither be accessed nor created (error: %s), " +
+				log.Printf("Directory %s could neither be accessed nor created (error: %s), "+
 					"not writing snapshots.", snapshotDir, err.Error())
 				return
 			}
@@ -422,7 +436,7 @@ func main() {
 			for {
 				sleepDuration, err := time.ParseDuration(configValues["SnapshotInterval"])
 				if err != nil {
-					sleepDuration = time.Minute*10
+					sleepDuration = time.Minute * 10
 				}
 				time.Sleep(sleepDuration)
 
@@ -481,7 +495,7 @@ func main() {
 	// flush data to files every 30s and at the end
 	go func() {
 		for {
-			time.Sleep(time.Second*30)
+			time.Sleep(time.Second * 30)
 			errs := stats.FlushAll()
 			for _, err := range errs {
 				log.Printf("Stats flush error: %s", err.Error())

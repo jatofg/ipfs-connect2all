@@ -89,7 +89,7 @@ func InitIpfs(ctx context.Context, connMgrType string, connMgrHighWater int, por
 	if err != nil {
 		panic(fmt.Errorf("failed to spawn ephemeral node: %s", err))
 	}
-	fmt.Println("IPFS node created successfully!")
+	fmt.Println("IPFS node created successfully! Peer ID: " + cfg.Identity.PeerID)
 
 	return ipfs
 }

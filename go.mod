@@ -3,7 +3,7 @@ module ipfs-connect2all
 require (
 	github.com/ipfs/go-bitswap v0.2.20
 	github.com/ipfs/go-cid v0.0.7
-	github.com/ipfs/go-ipfs v0.5.1
+	github.com/ipfs/go-ipfs v0.8.0
 	github.com/ipfs/go-ipfs-config v0.9.0
 	github.com/ipfs/interface-go-ipfs-core v0.4.0
 	github.com/libp2p/go-libp2p-core v0.6.1
